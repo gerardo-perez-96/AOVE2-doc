@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Exploración visual de señales</title>
+<style>
+  :root {
+    --surface-1: #f7f6f3; --surface-2: #ffffff; --border: #e1e0d9; --border-strong: #c3c2b7;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781; --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1f1f1e; --surface-2: #141413; --border: #2c2c2a; --border-strong: #444441;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    }
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--surface-1); color: var(--text-primary);
+    margin: 0; padding: 2rem; max-width: 900px; margin-inline: auto;
+  }
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 0.5rem; }
+  h2 { font-size: 14px; font-weight: 500; color: var(--text-secondary); margin: 0 0 6px; }
+  p.hint { font-size: 13px; color: var(--text-muted); margin-top: 0; margin-bottom: 1.5rem; }
+  select {
+    font-family: inherit; font-size: 14px; padding: 8px 12px; border-radius: var(--radius);
+    border: 0.5px solid var(--border-strong); background: var(--surface-2); color: var(--text-primary);
+  }
+  button {
+    font-family: inherit; font-size: 13px; padding: 8px 14px; border-radius: var(--radius);
+    border: 0.5px solid var(--border-strong); background: var(--surface-2); color: var(--text-secondary);
+    cursor: pointer;
+  }
+  button:hover { background: var(--surface-1); }
+  details {
+    background: var(--surface-2); border: 0.5px solid var(--border); border-radius: var(--radius);
+    padding: 10px 14px; margin-bottom: 1.5rem; font-size: 13px; color: var(--text-secondary);
+  }
+  details summary { cursor: pointer; font-weight: 500; color: var(--text-primary); }
+  details ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<h1>Comparar cualquier señal contra cualquier otra</h1>
+<p class="hint">Arrastra sobre el scatter para hacer zoom (rueda del ratón también). Doble clic para volver a la vista completa.</p>
+
+<details>
+<summary>Qué observar en el scatter</summary>
+<ul>
+  <li><b>Forma de la nube</b>: diagonal = relación lineal; curva = no lineal monótona; U o campana = óptimo intermedio (ningún coeficiente numérico lo detecta bien, solo el ojo).</li>
+  <li><b>Dispersión</b>: nube estrecha = relación fuerte y predecible; nube ancha = relación real pero ruidosa.</li>
+  <li><b>Outliers</b>: puntos muy alejados del resto pueden ser errores de sensor o eventos reales -- y pueden distorsionar mucho el coeficiente r mostrado.</li>
+  <li><b>Clusters</b>: dos o más nubes separadas sugieren una variable oculta (p. ej. dos regímenes de operación distintos) que ninguna tabla de correlación va a mostrarte.</li>
+  <li><b>Densidad</b>: zonas con muchos puntos son donde el modelo tiene más datos para aprender; zonas dispersas son casi extrapolación.</li>
+</ul>
+</details>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 1.25rem;">
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <label style="font-size: 13px; color: var(--text-secondary);">Eje X</label>
+    <select id="select-x"></select>
+  </div>
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <label style="font-size: 13px; color: var(--text-secondary);">Eje Y</label>
+    <select id="select-y"></select>
+  </div>
+  <button id="btn-swap">Intercambiar ejes</button>
+  <button id="btn-reset-zoom">Restablecer zoom</button>
+</div>
+
+<h2>Series temporales de las señales seleccionadas</h2>
+<div style="position: relative; height: 180px; margin-bottom: 1.5rem; background: var(--surface-2); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px;">
+  <canvas id="chart-series"></canvas>
+</div>
+<div id="series-legend" style="display:flex; flex-wrap:wrap; gap:16px; font-size:12px; color:var(--text-secondary); margin: -8px 0 1.5rem;"></div>
+
+<h2 id="diff-label"></h2>
+<p class="hint" style="margin-top: -6px;">Cambio paso a paso de la señal del eje X -- útil para variables controladas que oscilan alrededor de un punto de operación: la tendencia global puede salir plana aunque la señal tenga transiciones reales (picos aquí = momentos de cambio, no visibles en la serie de arriba a simple vista).</p>
+<div style="position: relative; height: 140px; margin-bottom: 1.5rem; background: var(--surface-2); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px;">
+  <canvas id="chart-diff"></canvas>
+</div>
+<div style="display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin: -8px 0 1.5rem;">
+  <span>Media |diff|: <b id="diff-stat-media" style="color: var(--text-primary);"></b></span>
+  <span>Máximo |diff|: <b id="diff-stat-max" style="color: var(--text-primary);"></b></span>
+</div>
+
+<h2 id="corr-label"></h2>
+<div style="position: relative; height: 420px; background: var(--surface-2); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 12px;">
+  <canvas id="chart-main"></canvas>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+<script>
+const DATA = {"xmeas_37": [23.2713, 23.4201, 23.8988, 24.4637, 24.286, 24.1, 24.8379, 24.471, 24.397, 24.7748, 25.0043, 24.9075, 24.8235, 24.9319, 24.9121, 24.7733, 24.1462, 23.7846, 23.5817, 22.9458, 23.1619, 23.1509, 23.1867, 23.1479, 23.364, 23.3694, 23.1289, 23.0663, 23.1461, 22.782], "xmeas_24": [97.9792, 98.0866, 98.3865, 98.8057, 98.8596, 98.7057, 98.758, 99.0679, 99.1502, 98.7024, 98.6905, 98.7763, 98.7911, 98.9028, 99.5808, 99.2659, 98.8145, 98.8258, 99.0211, 98.1637, 98.3195, 98.46, 98.9644, 99.2642, 98.7944, 99.0201, 99.0695, 99.0173, 99.2335, 98.9108], "xmeas_22": [42.2901, 42.7028, 43.4687, 43.2381, 43.1883, 43.0956, 42.9305, 42.1073, 42.489, 42.7693, 42.6228, 42.999, 43.6309, 43.1796, 43.3744, 43.2748, 43.3337, 43.1631, 43.1136, 42.5646, 42.6995, 42.366, 42.4369, 42.6577, 43.0533, 43.559, 43.8131, 44.0161, 43.7109, 43.5857], "xmv_6": [50.9277, 51.1555, 51.1225, 51.263, 51.0677, 51.1109, 50.3711, 50.4544, 50.6079, 51.0961, 51.6878, 51.3359, 50.8695, 50.5499, 50.7004, 50.9263, 50.8063, 50.3246, 50.5282, 50.1199, 50.3782, 50.1757, 50.7111, 50.9968, 50.9725, 50.9773, 50.5833, 50.7081, 50.7198, 50.36], "xmv_2": [55.796, 55.4637, 55.5398, 55.7437, 55.7021, 55.2478, 54.9377, 54.7858, 54.458, 54.2808, 54.092, 54.1442, 54.4083, 53.9231, 53.5434, 53.4813, 53.1386, 52.8007, 52.6988, 52.8848, 52.1475, 52.2933, 52.3337, 52.2464, 51.826, 51.7698, 51.0856, 51.3509, 51.5532, 51.0495], "xmeas_32": [28.9105, 28.7657, 28.8176, 28.4438, 27.9007, 28.1198, 28.4249, 28.2594, 28.2057, 28.6511, 28.4602, 28.6305, 28.9632, 29.1133, 29.0408, 29.3123, 29.1304, 29.2396, 29.2364, 29.2929, 29.398, 29.3684, 28.9476, 29.4479, 28.9948, 28.2574, 28.0622, 28.5565, 28.997, 29.182], "xmeas_7": [86.5579, 86.644, 86.6873, 86.295, 86.1273, 86.0276, 85.8922, 86.1276, 86.1673, 86.2244, 85.6893, 85.6073, 86.0228, 86.0642, 85.824, 85.8157, 84.9442, 85.3549, 85.626, 85.4837, 85.3477, 84.7789, 84.6327, 84.4916, 83.7025, 83.4507, 83.6631, 83.0573, 82.8493, 83.1774], "xmv_11": [67.3077, 67.0644, 66.7059, 67.0226, 67.1375, 66.9231, 67.0998, 67.1017, 66.7539, 67.0238, 67.0564, 66.7768, 65.9634, 65.7614, 65.4102, 65.0309, 65.262, 65.1555, 65.0868, 64.899, 64.7641, 64.8073, 64.5968, 64.487, 64.1736, 64.319, 64.0812, 64.2522, 64.4757, 64.5108], "xmeas_21": [79.8636, 80.1907, 80.3092, 80.9969, 81.0204, 81.0136, 80.5273, 80.7792, 81.0562, 81.3318, 81.3204, 81.5839, 81.4326, 81.1919, 81.4783, 81.4687, 81.7369, 81.9575, 82.0873, 82.8387, 83.0863, 82.8337, 82.9486, 82.9074, 82.9988, 83.1602, 83.3876, 84.0081, 83.9858, 83.9097], "xmeas_11": [80.5122, 81.0352, 80.5785, 80.329, 80.7223, 80.5581, 80.4528, 80.1912, 80.3508, 80.1827, 80.1523, 80.1188, 80.0746, 79.9511, 79.5952, 80.1087, 79.7442, 79.6369, 79.6408, 79.1419, 79.0039, 79.1675, 79.4048, 79.1333, 79.3936, 79.3425, 79.5887, 79.3229, 79.1472, 79.1], "xmeas_19": [36.4992, 36.3325, 36.4858, 36.0074, 36.2872, 36.3804, 35.9495, 35.7028, 35.4082, 35.1058, 35.6236, 35.4785, 35.3006, 35.1716, 34.8718, 34.4688, 33.8358, 33.803, 33.746, 33.6684, 33.77, 33.996, 33.8934, 33.7441, 33.6608, 33.6469, 33.7245, 33.6032, 33.5767, 33.9511], "xmeas_20": [40.5732, 40.3704, 40.6709, 41.1329, 40.9736, 41.5319, 40.9988, 40.856, 41.15, 40.6098, 40.2266, 40.4301, 40.3244, 40.071, 40.3328, 39.8324, 39.6677, 39.5465, 39.0549, 39.4094, 39.3318, 39.2982, 39.4787, 39.5512, 39.1494, 39.3153, 38.7416, 38.8158, 38.8639, 38.5499], "xmeas_36": [93.6434, 94.1941, 94.2638, 94.5612, 94.768, 95.0017, 95.0566, 94.457, 94.7427, 94.4642, 94.3694, 94.8025, 94.7801, 94.7628, 95.0484, 94.8119, 94.7737, 95.1634, 95.8132, 96.0236, 96.1891, 96.5623, 96.5688, 96.5996, 96.7389, 96.2014, 96.1807, 95.9949, 96.8327, 96.6955], "xmeas_12": [63.018, 63.0708, 63.1491, 63.1004, 63.3404, 63.7184, 63.9166, 64.1096, 64.3948, 64.2646, 63.4819, 63.707, 63.6428, 64.191, 64.1957, 63.8257, 64.1092, 64.3622, 64.0511, 64.5039, 64.6847, 65.0553, 65.278, 64.5447, 64.5605, 64.6408, 64.806, 64.9664, 64.9909, 65.1091], "xmeas_26": [78.2658, 78.2822, 78.242, 77.6451, 77.7646, 77.3381, 77.0172, 77.3108, 76.9655, 76.4321, 76.1514, 76.5215, 76.7386, 76.1904, 75.9621, 75.9292, 75.4585, 75.3921, 75.5257, 75.1931, 75.0315, 75.2861, 75.2793, 75.5359, 75.3066, 74.9825, 74.6576, 74.873, 75.2885, 76.0553], "xmeas_9": [63.742, 64.1856, 63.9201, 64.4221, 63.9734, 63.5286, 63.255, 63.0974, 63.1756, 63.216, 63.1752, 62.8041, 62.7399, 63.0452, 62.8545, 62.0819, 62.2399, 62.7782, 62.9271, 63.1938, 63.0183, 63.2016, 62.912, 62.3255, 62.2621, 62.2549, 62.2964, 62.0599, 61.8648, 61.4911], "xmeas_5": [44.8911, 45.1929, 45.1232, 45.2995, 45.6649, 44.7409, 45.2479, 45.1225, 45.2046, 45.0209, 44.8125, 44.8831, 44.6333, 44.2163, 44.4896, 44.5481, 43.8208, 43.635, 43.6263, 43.7202, 43.8733, 43.8315, 44.0599, 44.1959, 44.3956, 43.8289, 43.3196, 43.7402, 44.2329, 44.1737], "xmeas_29": [32.5513, 32.8252, 32.8739, 32.7004, 32.9642, 33.0027, 32.8332, 32.614, 32.2819, 32.2015, 32.1414, 33.2668, 33.4467, 33.0115, 33.0928, 33.0156, 33.5794, 33.9653, 34.0416, 33.8206, 34.54, 34.552, 34.9811, 35.0045, 34.7146, 34.9215, 34.794, 35.1153, 35.5046, 35.4869], "xmv_4": [70.6566, 70.5166, 70.413, 70.4127, 69.9851, 69.9517, 70.4089, 70.5685, 70.5526, 70.2824, 70.4925, 70.7414, 70.5075, 70.5579, 70.2671, 70.2842, 70.3919, 70.3384, 70.4121, 70.1029, 69.8933, 70.0248, 69.7899, 69.7899, 69.2897, 69.5715, 69.2417, 68.7366, 68.5158, 68.9158], "xmeas_38": [5.1535, 4.982, 4.8633, 4.6666, 4.6381, 4.4325, 4.3179, 4.2321, 4.0258, 4.0341, 3.8617, 3.7774, 3.967, 4.1858, 3.8874, 3.5442, 3.1066, 3.3599, 3.2398, 3.2148, 3.006, 3.4733, 3.3936, 3.3788, 3.197, 3.0015, 2.8726, 3.0126, 2.9547, 3.3081], "xmeas_17": [30.7937, 30.4626, 30.2631, 30.5465, 30.8147, 31.3835, 31.7166, 31.7929, 31.5246, 31.5856, 31.2695, 31.2709, 31.9386, 31.8587, 32.0496, 31.6169, 31.666, 31.1513, 31.2451, 30.9915, 31.5527, 32.1053, 32.342, 32.8583, 32.7954, 32.4764, 32.5986, 33.0039, 33.0753, 32.8327], "xmv_3": [35.4554, 35.5153, 35.7841, 35.592, 35.6019, 36.1279, 36.3277, 36.2232, 36.6603, 36.3435, 36.4129, 35.9117, 35.5699, 35.9028, 36.4629, 36.3628, 36.1391, 36.1678, 36.1499, 35.6218, 36.5518, 36.2791, 36.358, 36.7897, 36.7791, 36.6229, 36.7012, 36.6995, 37.0012, 36.8403], "xmv_9": [69.0834, 69.4508, 69.5089, 69.4805, 69.6812, 69.6914, 69.3911, 69.2952, 69.4227, 68.7814, 68.7436, 68.8915, 69.2594, 68.9399, 68.7708, 68.5714, 68.6493, 68.1874, 68.2105, 68.4801, 68.6682, 68.4056, 68.3582, 68.1684, 68.0531, 68.2443, 68.4283, 68.6768, 68.311, 68.1104], "xmeas_23": [59.4115, 59.6721, 59.6447, 59.6614, 60.198, 59.774, 60.083, 59.763, 59.7554, 59.5267, 59.619, 59.4955, 59.5528, 59.5796, 59.6762, 59.7704, 59.921, 59.8116, 59.5193, 59.7943, 60.2359, 60.3818, 60.289, 59.8381, 60.1797, 60.2419, 60.255, 60.616, 60.876, 60.822], "xmeas_15": [43.7471, 43.923, 44.0087, 44.2313, 44.3032, 44.0468, 44.2253, 43.8951, 44.2081, 43.956, 44.0592, 44.4047, 44.6548, 44.7075, 44.5901, 44.321, 44.0241, 43.9845, 44.0124, 44.2774, 44.1865, 44.8094, 45.2576, 45.6301, 45.0678, 44.9396, 44.6573, 45.3074, 45.6988, 45.948], "xmeas_14": [83.0162, 82.8144, 82.8636, 82.9391, 82.9235, 82.4492, 82.5699, 82.73, 82.6135, 82.3621, 82.6272, 83.0182, 83.3983, 83.7996, 83.7232, 83.931, 83.56, 83.3109, 83.5405, 83.3984, 83.0401, 83.125, 83.3671, 83.7417, 83.3225, 83.5787, 83.8973, 84.2773, 84.029, 84.1939], "xmeas_31": [61.5155, 61.5269, 61.6084, 61.689, 61.0976, 61.0245, 60.8817, 60.3733, 59.8508, 59.7701, 59.9502, 59.8306, 60.0774, 60.3152, 60.6019, 60.6235, 60.8877, 60.8388, 60.6336, 60.4611, 60.109, 60.1089, 60.3355, 59.9703, 59.6607, 59.6812, 59.6923, 59.9977, 60.309, 60.2059], "xmv_10": [61.0134, 60.9242, 60.4349, 60.3573, 60.7229, 60.7271, 60.3518, 60.0667, 60.1515, 60.151, 60.1292, 60.1776, 60.4662, 60.5781, 60.538, 60.3801, 59.9564, 60.142, 60.2755, 60.0011, 60.2577, 60.5581, 60.4137, 60.1712, 60.1043, 60.0951, 60.1176, 59.7993, 59.9365, 60.0986], "xmeas_13": [46.3012, 46.243, 46.4301, 46.6728, 46.7456, 46.8581, 46.8993, 46.6172, 47.137, 47.1832, 46.6502, 46.8282, 47.3539, 47.311, 47.0521, 46.9641, 46.7019, 46.6299, 46.6555, 46.2462, 46.2642, 46.1577, 45.5727, 45.2728, 44.968, 45.0842, 45.2048, 45.3214, 45.7368, 45.7096], "xmeas_40": [33.554, 33.74, 33.3831, 33.5537, 34.0077, 34.3488, 34.3084, 34.4025, 34.5173, 34.5569, 34.6079, 34.7277, 34.9679, 34.3359, 34.4588, 35.0837, 35.5805, 35.6419, 35.9959, 36.265, 36.5879, 36.1792, 36.3192, 36.607, 37.1267, 37.1397, 37.3048, 37.5308, 37.5245, 37.8115]};
+const ALL_NAMES = ["xmeas_37", "xmeas_24", "xmeas_22", "xmv_6", "xmv_2", "xmeas_32", "xmeas_7", "xmv_11", "xmeas_21", "xmeas_11", "xmeas_19", "xmeas_20", "xmeas_36", "xmeas_12", "xmeas_26", "xmeas_9", "xmeas_5", "xmeas_29", "xmv_4", "xmeas_38", "xmeas_17", "xmv_3", "xmv_9", "xmeas_23", "xmeas_15", "xmeas_14", "xmeas_31", "xmv_10", "xmeas_13", "xmeas_40"];
+const TARGET_NAME = "xmeas_40";
+const SERIES_COLORS = {};
+
+let xName = "xmeas_37";
+let yName = TARGET_NAME;
+let chart = null;
+let seriesChart = null;
+let diffChart = null;
+
+function corr(a, b) {
+  const n = a.length;
+  const ma = a.reduce((s,v)=>s+v,0)/n, mb = b.reduce((s,v)=>s+v,0)/n;
+  let num=0, da=0, db=0;
+  for (let i=0;i<n;i++){ num += (a[i]-ma)*(b[i]-mb); da += (a[i]-ma)**2; db += (b[i]-mb)**2; }
+  const denom = Math.sqrt(da*db);
+  return denom === 0 ? 0 : num / denom;
+}
+
+function normalize(arr) {
+  const min = Math.min(...arr), max = Math.max(...arr);
+  const range = max - min || 1;
+  return arr.map(v => (v - min) / range);
+}
+
+function populateSelect(sel, current) {
+  sel.innerHTML = "";
+  ALL_NAMES.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name === TARGET_NAME ? name + " (objetivo)" : name;
+    if (name === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function buildSeriesChart() {
+  if (seriesChart) { seriesChart.destroy(); seriesChart = null; }
+  const legend = document.getElementById("series-legend");
+  legend.innerHTML = "";
+  const names = xName === yName ? [xName] : [xName, yName];
+  const colors = ["#2a78d6", "#eb6834"];
+  const canvas = document.getElementById("chart-series");
+
+  const datasets = names.map((name, i) => ({
+    label: name, data: normalize(DATA[name]), borderColor: colors[i],
+    backgroundColor: "transparent", borderWidth: 2, pointRadius: 0, tension: 0
+  }));
+
+  seriesChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: DATA[names[0]].map((_,i)=>i), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false, min: -0.05, max: 1.05 } }
+    }
+  });
+
+  names.forEach((name, i) => {
+    const item = document.createElement("span");
+    item.style.cssText = "display:flex; align-items:center; gap:4px;";
+    item.innerHTML = '<span style="width:10px;height:10px;border-radius:2px;background:' + colors[i] + ';"></span>' + name + " (normalizada 0-1, eje temporal = índice de muestra)";
+    legend.appendChild(item);
+  });
+}
+
+function buildDiffChart() {
+  if (diffChart) { diffChart.destroy(); diffChart = null; }
+  const canvas = document.getElementById("chart-diff");
+  const serie = DATA[xName];
+  const diffs = serie.slice(1).map((v,i) => v - serie[i]);
+  const mediaAbs = diffs.reduce((s,v)=>s+Math.abs(v),0) / diffs.length;
+  const maxAbs = Math.max(...diffs.map(Math.abs));
+
+  document.getElementById("diff-label").textContent = "Derivada de " + xName;
+  document.getElementById("diff-stat-media").textContent = mediaAbs.toFixed(4);
+  document.getElementById("diff-stat-max").textContent = maxAbs.toFixed(4);
+
+  diffChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: diffs.map((_,i)=>i), datasets: [{
+      data: diffs, borderColor: "#eb6834", backgroundColor: "rgba(235,104,52,0.08)",
+      fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.1
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { display: false }, y: { grid: { color: "rgba(128,128,128,0.15)" } } }
+    }
+  });
+}
+
+function buildChart() {
+  if (chart) { chart.destroy(); chart = null; }
+  const canvas = document.getElementById("chart-main");
+  const points = DATA[xName].map((v,i) => ({x:v, y:DATA[yName][i]}));
+  const r = corr(DATA[xName], DATA[yName]).toFixed(3);
+  document.getElementById("corr-label").textContent = xName + " vs " + yName + "  (r=" + r + ", n=" + points.length + ")";
+
+  chart = new Chart(canvas, {
+    type: "scatter",
+    data: { datasets: [{
+      label: xName + " vs " + yName, data: points,
+      backgroundColor: "#2a78d655", pointRadius: 3, pointHoverRadius: 5
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        zoom: {
+          pan: { enabled: true, mode: "xy", modifierKey: "shift" },
+          zoom: {
+            drag: { enabled: true, backgroundColor: "rgba(42,120,214,0.15)", borderColor: "#2a78d6" },
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: "xy"
+          }
+        }
+      },
+      scales: {
+        x: { title: { display: true, text: xName, font: {size: 12} } },
+        y: { title: { display: true, text: yName, font: {size: 12} } }
+      }
+    }
+  });
+
+  canvas.ondblclick = () => chart.resetZoom();
+}
+
+function refreshAll() {
+  buildSeriesChart();
+  buildDiffChart();
+  buildChart();
+}
+
+const selX = document.getElementById("select-x");
+const selY = document.getElementById("select-y");
+populateSelect(selX, xName);
+populateSelect(selY, yName);
+
+selX.addEventListener("change", (e) => { xName = e.target.value; refreshAll(); });
+selY.addEventListener("change", (e) => { yName = e.target.value; refreshAll(); });
+document.getElementById("btn-swap").addEventListener("click", () => {
+  [xName, yName] = [yName, xName];
+  populateSelect(selX, xName);
+  populateSelect(selY, yName);
+  refreshAll();
+});
+document.getElementById("btn-reset-zoom").addEventListener("click", () => { if (chart) chart.resetZoom(); });
+
+refreshAll();
+</script>
+</body>
+</html>
