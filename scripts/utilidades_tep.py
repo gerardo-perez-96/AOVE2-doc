@@ -359,3 +359,29 @@ def variabilidad_multi_sim(df_raw, columna, columna_sim, simulaciones):
         'diff_abs_max_media': float(np.mean(diff_maximos)),
         'diff_abs_max_std': float(np.std(diff_maximos)),
     }
+
+
+def correlacion_diff_multi_sim(df_raw, col_a, col_b, columna_sim, simulaciones):
+    """
+    Igual que correlacion_multi_sim, pero sobre la DERIVADA (diff) de ambas
+    señales, no sobre sus valores crudos -- mide si dos señales REACCIONAN a la
+    vez a los mismos eventos, independientemente de en qué nivel absoluto estén
+    o de si comparten una deriva de largo plazo. Correlación cruda alta no implica
+    correlación de diffs alta, ni al revés -- son preguntas distintas:
+
+    - correlacion_multi_sim: "¿tienden a estar en niveles parecidos a la vez?"
+    - correlacion_diff_multi_sim: "¿cambian a la vez cuando algo pasa?"
+
+    Devuelve: (media, std, n_simulaciones_validas)
+    """
+    valores = []
+    for sim_id in simulaciones:
+        grupo = df_raw[df_raw[columna_sim] == sim_id]
+        diff_a = np.diff(grupo[col_a].values)
+        diff_b = np.diff(grupo[col_b].values)
+        if len(diff_a) > 1 and np.std(diff_a) > 0 and np.std(diff_b) > 0:
+            r = np.corrcoef(diff_a, diff_b)[0, 1]
+            valores.append(r)
+    if not valores:
+        return np.nan, np.nan, 0
+    return float(np.mean(valores)), float(np.std(valores)), len(valores)
