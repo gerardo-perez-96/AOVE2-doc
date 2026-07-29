@@ -1,4 +1,0 @@
-- Medir relación con la propia señal
-- Permiten ver hasta qué punto del pasado una señal puede aportar información del presente.
-- ACF: acumula datos de los datos desde el más moderno hasta el lag. PACF: se centra solo en el valor del propio lag
-- Hay que seleccionar un conjunto de lags a probar
