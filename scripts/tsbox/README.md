@@ -56,6 +56,29 @@ paneles; `Ctrl+Shift+L` propaga el zoom del panel activo al resto.
 salto en el eje X (la muestra no existe). Ambos se sombrean sobre la serie.
 Menú *Análisis → Informe de datos faltantes* lista los timestamps exactos.
 
+**Selección por click.** Click (sin arrastrar) sobre una región en modo
+Navegar selecciona su fila en Anotaciones y trae esa pestaña al frente. Con
+solape, gana la región más estrecha.
+
+**Ocultar todas.** Botón junto a Derivar/Color/Eliminar: desmarca todas las
+series de golpe.
+
+**Zonas globales.** Botón "Zona global" (`G`): arrastra en cualquier panel y la
+franja aparece en TODOS a la vez -- "zona de arranque", "parada programada".
+No pertenece a ninguna serie. Editar, renombrar, borrar y undo funcionan igual
+que las demás anotaciones.
+
+**Notas libres.** `Ctrl+N` desde cualquier sitio lleva el foco a un cuadro de
+texto para apuntar algo al vuelo, sin dibujar nada sobre la señal. Captura sola
+qué series veías y en qué rango. Undo/redo, persistidas en el JSON.
+
+**Botón lateral del ratón.** Atrás/adelante desplazan la ventana un 20% de su
+ancho, en cualquier modo, sin tocar el zoom.
+
+**Arrastrar paneles.** Cada panel tiene un icono de agarre (⠿⠿) en su cabecera:
+arrástralo sobre otro panel, mitad superior para colocarte antes, mitad
+inferior para después. Con undo.
+
 **Árbol de series.** La lista de la izquierda es un árbol: cada serie de origen
 es una raíz, sus derivadas cuelgan debajo plegadas por defecto y tienen SU
 PROPIO panel (no comparten gráfico con eje Y secundario salvo que actives

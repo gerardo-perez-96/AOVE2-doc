@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
 from pathlib import Path
 
 import numpy as np
@@ -13,10 +14,10 @@ from . import store
 from .analysis_ui import AnalysisWindow
 from .dialogs import DerivedDialog, LoadDialog
 from .loadworker import LoadWorker
-from .model import Mark, Region, new_id
+from .model import GlobalRegion, Mark, Note, Region, new_id
 from .panel import YMODE_FULL, YMODE_WINDOW, SeriesPanel
 from .session import Session
-from .viewbox import MODE_MARK, MODE_NAV, MODE_REGION
+from .viewbox import MODE_MARK, MODE_NAV, MODE_REGION, MODE_GLOBAL_REGION
 
 AUTOSAVE_MS = 30_000
 
@@ -89,14 +90,18 @@ class MainWindow(QtWidgets.QMainWindow):
         b_col.clicked.connect(self.pick_color)
         b_del = QtWidgets.QPushButton("Eliminar")
         b_del.clicked.connect(self.delete_series)
-        for b in (b_add, b_col, b_del):
+        b_none = QtWidgets.QPushButton("Ocultar todas")
+        b_none.setToolTip("Desmarca todas las series de golpe, sin tener "
+                          "que ir una a una.")
+        b_none.clicked.connect(self.hide_all_series)
+        for b in (b_add, b_col, b_del, b_none):
             row.addWidget(b)
         lv.addLayout(row)
         dock_l = QtWidgets.QDockWidget("Series", self)
         dock_l.setWidget(left)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock_l)
 
-        # --- dock derecho: anotaciones
+        # --- dock derecho: anotaciones (regiones/marcas) + notas libres
         self.table = QtWidgets.QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
             ["Serie", "Tipo", "Inicio", "Fin", "Duración", "Etiqueta"])
@@ -105,16 +110,51 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.itemChanged.connect(self._on_table_edited)
         self.table.itemDoubleClicked.connect(self._on_table_double_clicked)
-        right = QtWidgets.QWidget()
-        rv = QtWidgets.QVBoxLayout(right)
-        rv.setContentsMargins(6, 6, 6, 6)
-        rv.addWidget(self.table, 1)
+        tab_ann = QtWidgets.QWidget()
+        av = QtWidgets.QVBoxLayout(tab_ann)
+        av.setContentsMargins(6, 6, 6, 6)
+        av.addWidget(self.table, 1)
         b_deln = QtWidgets.QPushButton("Borrar seleccionada  (Supr)")
         b_deln.clicked.connect(self.delete_selected_annotation)
-        rv.addWidget(b_deln)
-        dock_r = QtWidgets.QDockWidget("Anotaciones", self)
+        av.addWidget(b_deln)
+
+        # Notas: texto libre, sin necesidad de dibujar nada sobre el gráfico.
+        # Ctrl+N (desde cualquier sitio, en cualquier modo de edición) trae
+        # el foco aquí para escribir sin soltar el hilo de lo que se está
+        # mirando. El contexto (series visibles + rango X) se captura solo.
+        tab_notes = QtWidgets.QWidget()
+        nv = QtWidgets.QVBoxLayout(tab_notes)
+        nv.setContentsMargins(6, 6, 6, 6)
+        self.note_list = QtWidgets.QListWidget()
+        self.note_list.itemDoubleClicked.connect(self._on_note_double_clicked)
+        nv.addWidget(self.note_list, 1)
+        entry = QtWidgets.QHBoxLayout()
+        self.note_input = QtWidgets.QLineEdit()
+        self.note_input.setPlaceholderText(
+            "Apunta algo (Ctrl+N para venir aquí) · Enter para guardar")
+        self.note_input.returnPressed.connect(self.add_note)
+        b_addnote = QtWidgets.QPushButton("Añadir")
+        b_addnote.clicked.connect(self.add_note)
+        entry.addWidget(self.note_input, 1)
+        entry.addWidget(b_addnote)
+        nv.addLayout(entry)
+        b_deln2 = QtWidgets.QPushButton("Borrar nota seleccionada  (Supr)")
+        b_deln2.clicked.connect(self.delete_selected_note)
+        nv.addWidget(b_deln2)
+        QtGui.QShortcut(QtGui.QKeySequence(Qt.Key_Delete), self.note_list,
+                        activated=self.delete_selected_note)
+
+        right = QtWidgets.QTabWidget()
+        right.addTab(tab_ann, "Anotaciones")
+        right.addTab(tab_notes, "Notas")
+        self.tabs_right = right
+        dock_r = QtWidgets.QDockWidget("Anotaciones y notas", self)
         dock_r.setWidget(right)
         self.addDockWidget(Qt.RightDockWidgetArea, dock_r)
+        self._dock_r = dock_r
+
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+N"), self,
+                        activated=self.quick_note)
 
         self.status_msg = QtWidgets.QLabel("Abre un fichero para empezar.")
         self.status_pos = QtWidgets.QLabel("")
@@ -145,7 +185,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mode_group.setExclusive(True)
         for text, mode, key in (("Navegar", MODE_NAV, "N"),
                                 ("Región", MODE_REGION, "R"),
-                                ("Marca", MODE_MARK, "M")):
+                                ("Marca", MODE_MARK, "M"),
+                                ("Zona global", MODE_GLOBAL_REGION, "G")):
             a = QtGui.QAction(text, self, checkable=True, shortcut=key)
             a.setData(mode)
             a.triggered.connect(lambda _=False, m=mode: self.set_mode(m))
@@ -293,8 +334,15 @@ class MainWindow(QtWidgets.QMainWindow):
         for s in self.panel_series():
             p = SeriesPanel(self.session, s)
             p.sigRegionDrawn.connect(self.on_region_drawn)
+            p.sigGlobalRegionDrawn.connect(self.on_global_region_drawn)
             p.sigMarkDrawn.connect(self.on_mark_drawn)
+            p.sigPanStep.connect(self.on_pan_step)
+            p.sigReorderDrop.connect(self.on_panel_drop)
+            p.sigRegionClicked.connect(self.on_region_clicked)
+            p.sigDragStarted.connect(self._on_panel_drag_started)
+            p.sigDragEnded.connect(self._on_panel_drag_ended)
             p.sigRegionEdited.connect(self.on_region_edited)
+            p.sigGlobalRegionEdited.connect(self.on_global_region_edited)
             p.sigCloseRequested.connect(self.hide_series)
             p.sigCursor.connect(self.on_cursor)
             p.set_show_gaps(self.a_gaps.isChecked())
@@ -306,6 +354,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.refresh_visibility()
         self.refresh_annotations()
         self.refresh_annotation_table()
+        self.refresh_notes()
         self._relink(self.a_sync.isChecked())
         self._apply_y_mode_to_new()
 
@@ -362,6 +411,26 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_x_range(self, x0: float, x1: float) -> None:
         for p in self.panels.values():
             p.vb.setXRange(x0, x1, padding=0)
+
+    PAN_STEP_FRACTION = 0.2   # 20% de la ventana visible por pulsación
+
+    def on_pan_step(self, direction: int) -> None:
+        """Botón lateral del ratón (atrás/adelante): desplaza la ventana un
+        paso, manteniendo el zoom. Afecta a TODAS las series a la vez -- es
+        navegación global, no una interacción de un panel suelto, así que no
+        depende de si el zoom sincronizado está activado o no.
+
+        Es un paso por click, no repetición mientras se mantiene pulsado
+        (los botones laterales se pulsan y sueltan, no se mantienen como un
+        joystick). Si en el uso real se queda corto, PAN_STEP_FRACTION es
+        el único número que hay que tocar.
+        """
+        p = self.panels.get(self._active_sid) or next(iter(self.panels.values()), None)
+        if p is None:
+            return
+        (x0, x1), _ = p.vb.viewRange()
+        step = (x1 - x0) * self.PAN_STEP_FRACTION * direction
+        self.set_x_range(x0 + step, x1 + step)
 
     def autoscale_y(self) -> None:
         for p in self.panels.values():
@@ -436,9 +505,37 @@ class MainWindow(QtWidgets.QMainWindow):
             order.append(root.data(0, Qt.UserRole))
             for j in range(root.childCount()):
                 order.append(root.child(j).data(0, Qt.UserRole))
-        self.session.project.reorder(order)
-        self.session.dirty = True
-        self.rebuild_panels()
+        self.undo.push(cmd.ReorderSeries(self, order))
+
+    def _on_panel_drag_started(self) -> None:
+        """Arrastrar un panel es click+arrastre sobre un icono diminuto, pero
+        Qt entra en un bucle de eventos nativo aparte (drag.exec()) que sigue
+        procesando la app mientras dura -- incluidos los repintados de los
+        18 paneles bajo el cursor. Se congelan aquí para que ese trabajo no
+        compita con el propio arrastre; setUpdatesEnabled es la técnica
+        estándar de Qt para esto, la misma que usan Qt Designer/Creator al
+        arrastrar widgets pesados."""
+        self.splitter.setUpdatesEnabled(False)
+
+    def _on_panel_drag_ended(self) -> None:
+        self.splitter.setUpdatesEnabled(True)
+        self.splitter.update()
+
+    def on_panel_drop(self, dragged_sid: str, onto_sid: str, before: bool) -> None:
+        """Reordenar arrastrando el panel EN LA INTERFAZ, no solo en la
+        lista lateral. Mismo resultado final que _on_rows_moved: se
+        recoloca en la lista GLOBAL de series (todas, visibles u ocultas,
+        originales y derivadas), porque el orden es una única propiedad del
+        proyecto -- la lista lateral y los paneles son dos vistas de lo
+        mismo, no dos órdenes independientes.
+        """
+        order = [s.sid for s in self.session.project.ordered()]
+        if dragged_sid not in order or onto_sid not in order:
+            return
+        order.remove(dragged_sid)
+        idx = order.index(onto_sid)
+        order.insert(idx if before else idx + 1, dragged_sid)
+        self.undo.push(cmd.ReorderSeries(self, order))
 
     def hide_series(self, sid: str) -> None:
         s = self.session.project.by_id(sid)
@@ -447,6 +544,29 @@ class MainWindow(QtWidgets.QMainWindow):
             self.session.dirty = True
             self.refresh_list()
             self.refresh_visibility()
+
+    def hide_all_series(self) -> None:
+        """Desmarca todas las series de golpe. Con muchas series, ir una a
+        una en el árbol es justo el tipo de trabajo repetitivo que no
+        debería hacer falta -- un solo botón, un solo refresco, no N.
+        """
+        if not self.session.project.series:
+            return
+
+        def _uncheck(item: QtWidgets.QTreeWidgetItem) -> None:
+            item.setCheckState(0, Qt.Unchecked)
+            for i in range(item.childCount()):
+                _uncheck(item.child(i))
+
+        self.list.blockSignals(True)
+        for i in range(self.list.topLevelItemCount()):
+            _uncheck(self.list.topLevelItem(i))
+        self.list.blockSignals(False)
+
+        for s in self.session.project.series:
+            s.visible = False
+        self.session.dirty = True
+        self.refresh_visibility()
 
     def pick_color(self) -> None:
         s = self.session.project.by_id(self._active_sid)
@@ -492,7 +612,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ------------------------------------------------------ anotaciones
     def find_annotation(self, aid: str):
-        for coll in (self.session.project.regions, self.session.project.marks):
+        for coll in (self.session.project.regions, self.session.project.marks,
+                    self.session.project.global_regions):
             for a in coll:
                 if a.aid == aid:
                     return a
@@ -504,13 +625,19 @@ class MainWindow(QtWidgets.QMainWindow):
             p.set_mode(mode)
         hint = {MODE_NAV: "Navegar: arrastra para desplazar, rueda para zoom.",
                 MODE_REGION: "Región: arrastra sobre la señal para etiquetar un tramo.",
-                MODE_MARK: "Marca: click sobre la señal para poner una marca."}
+                MODE_MARK: "Marca: click sobre la señal para poner una marca.",
+                MODE_GLOBAL_REGION: "Zona global: arrastra en cualquier panel para "
+                                    "marcar una franja en TODAS las series a la vez."}
         self.status_msg.setText(hint[mode])
 
     def on_region_drawn(self, sid: str, t0: float, t1: float) -> None:
         r = Region(aid=new_id("r"), sid=sid, t0=min(t0, t1), t1=max(t0, t1),
                    label="")
         self.undo.push(cmd.AddRegion(self, r))
+
+    def on_global_region_drawn(self, t0: float, t1: float) -> None:
+        r = GlobalRegion(aid=new_id("g"), t0=min(t0, t1), t1=max(t0, t1), label="")
+        self.undo.push(cmd.AddGlobalRegion(self, r))
 
     def on_mark_drawn(self, sid: str, t: float) -> None:
         self.undo.push(cmd.AddMark(self, Mark(aid=new_id("m"), sid=sid, t=t)))
@@ -521,27 +648,59 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.undo.push(cmd.EditRegion(self, aid, t0, t1))
 
+    def on_global_region_edited(self, aid: str, t0: float, t1: float) -> None:
+        r = self.find_annotation(aid)
+        if r is None or (abs(r.t0 - t0) < 1e-12 and abs(r.t1 - t1) < 1e-12):
+            return
+        self.undo.push(cmd.EditGlobalRegion(self, aid, t0, t1))
+
+    def on_region_clicked(self, aid: str) -> None:
+        """Click en una región/zona global sobre el gráfico: selecciona la
+        fila correspondiente en la tabla de Anotaciones y trae esa pestaña
+        al frente, para no tener que buscarla a mano entre docenas de filas.
+        """
+        for r in range(self.table.rowCount()):
+            it = self.table.item(r, 0)
+            if it is not None and it.data(Qt.UserRole) == aid:
+                self.table.clearSelection()
+                self.table.selectRow(r)
+                self.table.scrollToItem(it)
+                self._dock_r.show()
+                self._dock_r.raise_()
+                self.tabs_right.setCurrentWidget(self.tabs_right.widget(0))
+                return
+
     def refresh_annotations(self) -> None:
         movable = self._mode == MODE_REGION
+        movable_global = self._mode == MODE_GLOBAL_REGION
         for sid, p in self.panels.items():
             p.sync_annotations(
                 [r for r in self.session.project.regions if r.sid == sid],
                 [m for m in self.session.project.marks if m.sid == sid],
                 movable)
+            # las zonas globales se ven en TODOS los paneles, no solo el suyo
+            p.sync_global_regions(self.session.project.global_regions,
+                                  movable_global)
 
     def refresh_annotation_table(self) -> None:
         is_dt = self.session.project.source.x_is_datetime
         rows = ([("región", r) for r in self.session.project.regions] +
-                [("marca", m) for m in self.session.project.marks])
+                [("marca", m) for m in self.session.project.marks] +
+                [("zona global", g) for g in self.session.project.global_regions])
         rows.sort(key=lambda t: getattr(t[1], "t0", getattr(t[1], "t", 0.0)))
         self.table.blockSignals(True)
         self.table.setRowCount(len(rows))
         for i, (kind, a) in enumerate(rows):
-            s = self.session.project.by_id(a.sid)
-            t0 = a.t0 if kind == "región" else a.t
-            t1 = a.t1 if kind == "región" else a.t
-            vals = [s.name if s else "?", kind, fmt_x(t0, is_dt), fmt_x(t1, is_dt),
-                    f"{t1 - t0:.6g}" if kind == "región" else ""]
+            if kind == "zona global":
+                name = "— todas las series —"
+            else:
+                s = self.session.project.by_id(a.sid)
+                name = s.name if s else "?"
+            is_point = kind == "marca"
+            t0 = a.t if is_point else a.t0
+            t1 = a.t if is_point else a.t1
+            vals = [name, kind, fmt_x(t0, is_dt), fmt_x(t1, is_dt),
+                    "" if is_point else f"{t1 - t0:.6g}"]
             for c, v in enumerate(vals):
                 it = QtWidgets.QTableWidgetItem(v)
                 it.setFlags(it.flags() & ~Qt.ItemIsEditable)
@@ -580,9 +739,85 @@ class MainWindow(QtWidgets.QMainWindow):
             a = self.find_annotation(aid)
             if a is None:
                 continue
-            self.undo.push(cmd.DeleteRegion(self, aid) if hasattr(a, "t0")
-                           else cmd.DeleteMark(self, aid))
+            if isinstance(a, GlobalRegion):
+                self.undo.push(cmd.DeleteGlobalRegion(self, aid))
+            elif isinstance(a, Region):
+                self.undo.push(cmd.DeleteRegion(self, aid))
+            else:
+                self.undo.push(cmd.DeleteMark(self, aid))
         self.undo.endMacro()
+
+    # ------------------------------------------------------------ notas
+    def quick_note(self) -> None:
+        """Trae el foco al cuadro de notas desde cualquier sitio y en
+        cualquier modo de edición (navegar/región/marca), sin tocar el
+        canvas. Ctrl+N. Es la vía rápida para apuntar algo al vuelo sin
+        interrumpir lo que se está mirando para ir a dibujar una marca."""
+        self._dock_r.show()
+        self._dock_r.raise_()
+        self.tabs_right.setCurrentWidget(self.tabs_right.widget(1))
+        self.note_input.setFocus()
+        self.note_input.selectAll()
+
+    def _current_context(self) -> tuple[float | None, float | None, list[str]]:
+        """Rango X visible y series mostradas ahora mismo, para adjuntarlo a
+        una nota sin que el usuario tenga que señalar nada él mismo -- es
+        exactamente lo que se pidió: anotar sin necesidad de marcar."""
+        vis_sids = [s.sid for s in self.panel_series()
+                   if (p := self.panels.get(s.sid)) is not None
+                   and p.isVisibleTo(self)]
+        p = self.panels.get(self._active_sid)
+        if p is None or not p.isVisibleTo(self):
+            p = next((self.panels[sid] for sid in vis_sids), None)
+        if p is None:
+            return None, None, vis_sids
+        (x0, x1), _ = p.vb.viewRange()
+        return float(x0), float(x1), vis_sids
+
+    def add_note(self) -> None:
+        text = self.note_input.text().strip()
+        if not text:
+            return
+        x0, x1, series = self._current_context()
+        note = Note(nid=new_id("n"), text=text, created_at=time.time(),
+                    x0=x0, x1=x1, series=series)
+        self.undo.push(cmd.AddNote(self, note))
+        self.note_input.clear()
+
+    def refresh_notes(self) -> None:
+        self.note_list.clear()
+        is_dt = self.session.project.source.x_is_datetime
+        for n in sorted(self.session.project.notes, key=lambda n: n.created_at):
+            when = dt.datetime.fromtimestamp(n.created_at).strftime("%d/%m %H:%M")
+            names = ", ".join(
+                s.name for sid in n.series
+                if (s := self.session.project.by_id(sid)) is not None)
+            where = (f"{fmt_x(n.x0, is_dt)} – {fmt_x(n.x1, is_dt)}"
+                     if n.x0 is not None and n.x1 is not None else "")
+            ctx = "  ·  ".join(c for c in (names, where) if c)
+            it = QtWidgets.QListWidgetItem(f"[{when}]  {n.text}")
+            it.setData(Qt.UserRole, n.nid)
+            it.setToolTip(f"{ctx}\n\n{n.text}" if ctx else n.text)
+            self.note_list.addItem(it)
+
+    def delete_selected_note(self) -> None:
+        nids = {i.data(Qt.UserRole) for i in self.note_list.selectedItems()}
+        if not nids:
+            return
+        self.undo.beginMacro(f"Borrar {len(nids)} nota(s)")
+        for nid in nids:
+            self.undo.push(cmd.DeleteNote(self, nid))
+        self.undo.endMacro()
+
+    def _on_note_double_clicked(self, item) -> None:
+        """Doble click en una nota: salta al rango que se estaba viendo
+        cuando se escribió, igual que hace la tabla de anotaciones."""
+        n = next((n for n in self.session.project.notes
+                  if n.nid == item.data(Qt.UserRole)), None)
+        if n is None or n.x0 is None or n.x1 is None:
+            return
+        pad = max((n.x1 - n.x0) * 0.3, 1e-9)
+        self.set_x_range(n.x0 - pad, n.x1 + pad)
 
     def on_cursor(self, x: float, y: float) -> None:
         panel = self.sender()

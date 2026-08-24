@@ -73,12 +73,51 @@ class Region:
 
 
 @dataclass
+class GlobalRegion:
+    """Una franja que abarca TODO el dataset, dibujada en TODOS los paneles
+    a la vez -- "zona de arranque", "parada programada"... No pertenece a
+    una señal concreta, así que no vive dentro de Region (que siempre está
+    atada a un sid): es una capa aparte que se ve en cada panel además de
+    sus propias regiones/marcas por serie.
+    """
+    aid: str
+    t0: float
+    t1: float
+    label: str = ""
+    color: str = "#7C4DFF"
+
+    def normalized(self) -> "GlobalRegion":
+        if self.t0 > self.t1:
+            self.t0, self.t1 = self.t1, self.t0
+        return self
+
+
+@dataclass
 class Mark:
     aid: str
     sid: str
     t: float
     label: str = ""
     color: str = "#FF5252"
+
+
+@dataclass
+class Note:
+    """Un apunte de texto libre, sin necesidad de marcar nada en el gráfico.
+
+    Frente a Region/Mark, que exigen un gesto sobre el canvas (arrastrar o
+    hacer click) para fijar un instante concreto, una Note se puede escribir
+    de un tirón mientras exploras -- "esto huele a fallo de sensor",
+    "revisar con el maestro" -- sin interrumpir lo que estás mirando para ir
+    a dibujar algo. El contexto (qué series se veían y en qué rango) se
+    captura solo, como ayuda para releerla luego; no hace falta señalarlo.
+    """
+    nid: str
+    text: str
+    created_at: float                       # reloj de pared (epoch, segundos)
+    x0: Optional[float] = None              # rango visible al escribirla
+    x1: Optional[float] = None
+    series: list[str] = field(default_factory=list)  # sids visibles entonces
 
 
 @dataclass
@@ -104,6 +143,8 @@ class Project:
     series: list[SeriesDef] = field(default_factory=list)
     regions: list[Region] = field(default_factory=list)
     marks: list[Mark] = field(default_factory=list)
+    global_regions: list[GlobalRegion] = field(default_factory=list)
+    notes: list[Note] = field(default_factory=list)
     view: dict = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
 
@@ -150,6 +191,11 @@ class Project:
         self.series = [s for s in self.series if s.sid not in doomed]
         self.regions = [r for r in self.regions if r.sid not in doomed]
         self.marks = [m for m in self.marks if m.sid not in doomed]
+        # Una nota puede referenciar varias series a la vez (es contexto, no
+        # pertenencia): si una desaparece, se limpia de la lista en vez de
+        # borrar la nota entera -- el texto sigue siendo válido.
+        for n in self.notes:
+            n.series = [sid for sid in n.series if sid not in doomed]
         self.renumber()
         return doomed
 
@@ -172,6 +218,8 @@ class Project:
             "series": [asdict(s) for s in self.series],
             "regions": [asdict(r) for r in self.regions],
             "marks": [asdict(m) for m in self.marks],
+            "global_regions": [asdict(g) for g in self.global_regions],
+            "notes": [asdict(n) for n in self.notes],
             "view": self.view,
         }
 
@@ -192,6 +240,8 @@ class Project:
             series=[pick(SeriesDef, s) for s in d.get("series", [])],
             regions=[pick(Region, r) for r in d.get("regions", [])],
             marks=[pick(Mark, m) for m in d.get("marks", [])],
+            global_regions=[pick(GlobalRegion, g) for g in d.get("global_regions", [])],
+            notes=[pick(Note, n) for n in d.get("notes", [])],
             view=d.get("view", {}),
             schema_version=SCHEMA_VERSION,
         )

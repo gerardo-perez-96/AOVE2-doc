@@ -6,7 +6,7 @@ import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from .model import Mark, Region, SeriesDef
+from .model import GlobalRegion, Mark, Region, SeriesDef
 from .transforms import fmt_stats
 from .viewbox import MODE_NAV, EditViewBox
 
@@ -22,6 +22,7 @@ GAP_STRIP_FRAC = 0.07     # alto de esa franja, en fraccion del panel
 
 MAX_GAP_ITEMS = 200          # por encima de esto, se dibuja vectorizado
 GAP_DETAIL_LIMIT = 20_000    # por encima, se agrupan en bandas
+PANEL_MIME = "application/x-tsbox-panel-sid"
 
 
 class GapOverlay(pg.GraphicsObject):
@@ -193,13 +194,63 @@ def merge_intervals(iv, tol: float = 0.0, max_out: int | None = None):
     return out, len(a) - len(out)
 
 
+class _DragHandle(QtWidgets.QLabel):
+    """Icono de agarre para reordenar arrastrando el panel EN LA PROPIA
+    INTERFAZ, sin tener que ir a la lista lateral. Solo esta zona concreta
+    inicia el QDrag; el resto del panel sigue respondiendo a los gestos
+    normales del ratón (pan, región, marca) sin ninguna interferencia,
+    porque el drag-and-drop de Qt es un mecanismo aparte de los eventos de
+    ratón que usa pyqtgraph, y solo se activa aquí, al pulsar el icono.
+    """
+
+    sigDragStarted = QtCore.Signal()
+    sigDragEnded = QtCore.Signal()
+
+    def __init__(self, sid: str, parent=None):
+        super().__init__("⠿⠿", parent)
+        self.sid = sid
+        self.setCursor(Qt.OpenHandCursor)
+        self.setToolTip("Arrastra para mover este panel")
+        self.setStyleSheet("color:#888; font-size:11px; padding:0 4px;")
+
+    def mousePressEvent(self, ev) -> None:
+        if ev.button() == Qt.LeftButton:
+            drag = QtGui.QDrag(self)
+            mime = QtCore.QMimeData()
+            mime.setData(PANEL_MIME, self.sid.encode("utf-8"))
+            drag.setMimeData(mime)
+            # Pixmap explícito y pequeño (solo el propio icono), no lo que
+            # Qt decida por defecto. Sin esto, algunas plataformas generan
+            # el feedback visual del arrastre renderizando el widget de
+            # origen -- barato aquí porque el icono es diminuto, pero es
+            # el tipo de detalle que en otras combinaciones sí importa, y
+            # dejarlo explícito quita la incógnita en vez de confiar en el
+            # comportamiento por defecto de cada plataforma.
+            drag.setPixmap(self.grab())
+            drag.setHotSpot(QtCore.QPoint(self.width() // 2, self.height() // 2))
+            self.sigDragStarted.emit()
+            try:
+                drag.exec(Qt.MoveAction)
+            finally:
+                self.sigDragEnded.emit()
+            return
+        super().mousePressEvent(ev)
+
+
 class SeriesPanel(QtWidgets.QFrame):
     sigRegionDrawn = QtCore.Signal(str, float, float)      # sid, t0, t1
+    sigGlobalRegionDrawn = QtCore.Signal(float, float)     # t0, t1 (TODAS las series)
     sigMarkDrawn = QtCore.Signal(str, float)               # sid, t
+    sigPanStep = QtCore.Signal(int)                        # -1 atrás, +1 adelante
     sigRegionEdited = QtCore.Signal(str, float, float)     # aid, t0, t1
+    sigGlobalRegionEdited = QtCore.Signal(str, float, float)  # aid, t0, t1
     sigAnnotationMenu = QtCore.Signal(str, object)         # aid, globalPos
     sigCloseRequested = QtCore.Signal(str)
+    sigRegionClicked = QtCore.Signal(str)                  # aid (región o zona global)
     sigCursor = QtCore.Signal(float, float)
+    sigReorderDrop = QtCore.Signal(str, str, bool)  # sid_arrastrado, sid_destino, antes
+    sigDragStarted = QtCore.Signal()
+    sigDragEnded = QtCore.Signal()
 
     def __init__(self, session, sdef: SeriesDef, parent=None):
         super().__init__(parent)
@@ -207,6 +258,7 @@ class SeriesPanel(QtWidgets.QFrame):
         self.sdef = sdef
         self.sid = sdef.sid
         self._region_items: dict[str, pg.LinearRegionItem] = {}
+        self._global_region_items: dict[str, pg.LinearRegionItem] = {}
         self._mark_items: dict[str, pg.InfiniteLine] = {}
         self._gap_items: list[pg.LinearRegionItem] = []
         self._gap_overlay: GapOverlay | None = None
@@ -221,6 +273,7 @@ class SeriesPanel(QtWidgets.QFrame):
 
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.setMinimumHeight(140)
+        self.setAcceptDrops(True)
         self._build_ui()
         self.redraw()
 
@@ -245,6 +298,10 @@ class SeriesPanel(QtWidgets.QFrame):
         btn_close.setToolTip("Ocultar este panel")
         btn_close.clicked.connect(lambda: self.sigCloseRequested.emit(self.sid))
 
+        self._drag_handle = _DragHandle(self.sid)
+        self._drag_handle.sigDragStarted.connect(self.sigDragStarted.emit)
+        self._drag_handle.sigDragEnded.connect(self.sigDragEnded.emit)
+        head.addWidget(self._drag_handle)
         head.addWidget(self.chip)
         head.addWidget(self.title)
         head.addSpacing(8)
@@ -256,7 +313,15 @@ class SeriesPanel(QtWidgets.QFrame):
 
         axis = {}
         if self.session.project.source.x_is_datetime:
-            axis["bottom"] = pg.DateAxisItem(orientation="bottom")
+            # utcOffset=0 es obligatorio, no cosmético: sin él, DateAxisItem
+            # aplica la zona horaria LOCAL DEL SISTEMA a las etiquetas del
+            # eje, mientras que fmt_x() (usado en la tabla de anotaciones,
+            # las notas y los tooltips) formatea siempre en UTC. Resultado
+            # medido: una región que la tabla marca como "termina a las
+            # 11:01" aparecía en el eje como "12:01" en una máquina en
+            # CET (UTC+1) -- la hora de pared del fichero de origen no
+            # cambia, pero cada sitio de la interfaz la mostraba distinta.
+            axis["bottom"] = pg.DateAxisItem(orientation="bottom", utcOffset=0)
         self.vb = EditViewBox()
         self.plot = pg.PlotWidget(viewBox=self.vb, axisItems=axis)
         self.plot.showGrid(x=True, y=True, alpha=0.15)
@@ -279,8 +344,19 @@ class SeriesPanel(QtWidgets.QFrame):
         self.curve = self.plot.plot([], [], pen=pg.mkPen(self.sdef.color, width=1))
 
         self.vb.sigDrawRegion.connect(self._on_draw_region)
+        self.vb.sigDrawGlobalRegion.connect(self._on_draw_global_region)
         self.vb.sigMark.connect(lambda x: self.sigMarkDrawn.emit(self.sid, x))
-        self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
+        self.vb.sigPanStep.connect(self.sigPanStep.emit)
+        self.vb.sigNavClick.connect(self._on_nav_click)
+        # Sin throttle, sigMouseMoved dispara a ritmo NATIVO del ratón (puede
+        # ir muy por encima de 60 Hz) por cada panel bajo el cursor. Medido:
+        # 34 us por llamada -- poco aislado, pero sin límite se acumula, y es
+        # justo el tipo de trabajo de fondo que se nota como lag durante
+        # cualquier movimiento continuo del ratón, arrastrar incluido. Es la
+        # recomendación estándar de pyqtgraph para tracking de posición.
+        self._mouse_proxy = pg.SignalProxy(
+            self.plot.scene().sigMouseMoved, rateLimit=30,
+            slot=self._on_mouse_moved_raw)
 
         self._stats_timer = QtCore.QTimer(self)
         self._stats_timer.setSingleShot(True)
@@ -305,10 +381,58 @@ class SeriesPanel(QtWidgets.QFrame):
         self.vb2.setGeometry(self.plot.plotItem.vb.sceneBoundingRect())
         self.vb2.linkedViewChanged(self.plot.plotItem.vb, self.vb2.XAxis)
 
+    def _on_nav_click(self, x: float) -> None:
+        """Click simple en modo Navegar: si cae dentro de una región (propia
+        de esta serie, o global), avisa hacia arriba para que la tabla de
+        anotaciones seleccione esa fila. Si el click cae dentro de varias
+        regiones solapadas, gana la más estrecha -- es la interpretación
+        más específica, igual que hacer click en el elemento "de encima"
+        en un editor gráfico normal.
+        """
+        aid = self._region_at(x)
+        if aid is not None:
+            self.sigRegionClicked.emit(aid)
+
+    def _region_at(self, x: float) -> str | None:
+        best_aid, best_width = None, float("inf")
+        for items in (self._region_items, self._global_region_items):
+            for aid, it in items.items():
+                lo, hi = sorted(it.getRegion())
+                if lo <= x <= hi and (hi - lo) < best_width:
+                    best_aid, best_width = aid, hi - lo
+        return best_aid
+
+    def _on_mouse_moved_raw(self, args) -> None:        # SignalProxy entrega los argumentos originales envueltos en una
+        # tupla -- es su convención, no un capricho nuestro.
+        self._on_mouse_moved(args[0])
+
     def _on_mouse_moved(self, pos) -> None:
         if self.plot.sceneBoundingRect().contains(pos):
             p = self.vb.mapSceneToView(pos)
             self.sigCursor.emit(p.x(), p.y())
+
+    # ------------------------------------------------------ drag & drop
+    # Soltar sobre la mitad superior de este panel lo coloca ANTES;
+    # sobre la mitad inferior, DESPUÉS. Es el mismo "arrastro la tercera
+    # entre la segunda y la primera" que ya hacía la lista lateral, pero
+    # ahora también funciona arrastrando el panel mismo en la interfaz.
+    def dragEnterEvent(self, ev) -> None:
+        if ev.mimeData().hasFormat(PANEL_MIME):
+            ev.acceptProposedAction()
+
+    def dragMoveEvent(self, ev) -> None:
+        if ev.mimeData().hasFormat(PANEL_MIME):
+            ev.acceptProposedAction()
+
+    def dropEvent(self, ev) -> None:
+        if not ev.mimeData().hasFormat(PANEL_MIME):
+            return
+        dragged_sid = bytes(ev.mimeData().data(PANEL_MIME)).decode("utf-8")
+        if dragged_sid == self.sid:
+            return
+        before = ev.position().y() < self.height() / 2
+        self.sigReorderDrop.emit(dragged_sid, self.sid, before)
+        ev.acceptProposedAction()
 
     # ------------------------------------------------------------- dibujo
     def redraw(self) -> None:
@@ -492,6 +616,8 @@ class SeriesPanel(QtWidgets.QFrame):
         self.vb.set_mode(mode)
         for it in self._region_items.values():
             it.setMovable(mode != MODE_NAV)
+        for it in self._global_region_items.values():
+            it.setMovable(mode != MODE_NAV)
 
     def _on_draw_region(self, x0: float, x1: float, finished: bool) -> None:
         if self._draft is None:
@@ -505,6 +631,24 @@ class SeriesPanel(QtWidgets.QFrame):
             self._draft = None
             if abs(x1 - x0) > 0:
                 self.sigRegionDrawn.emit(self.sid, x0, x1)
+
+    def _on_draw_global_region(self, x0: float, x1: float, finished: bool) -> None:
+        """Igual que _on_draw_region, pero el borrador solo se ve en ESTE
+        panel mientras arrastras (feedback inmediato); al soltar, se avisa
+        hacia arriba sin sid -- mainwindow la crea una vez y la reparte a
+        TODOS los paneles via sync_global_regions()."""
+        if self._draft is None:
+            self._draft = pg.LinearRegionItem(values=(x0, x1),
+                                              brush=pg.mkBrush(124, 77, 255, 70),
+                                              pen=pg.mkPen("#7C4DFF", width=1))
+            self._draft.setZValue(10)
+            self.plot.addItem(self._draft)
+        self._draft.setRegion((x0, x1))
+        if finished:
+            self.plot.removeItem(self._draft)
+            self._draft = None
+            if abs(x1 - x0) > 0:
+                self.sigGlobalRegionDrawn.emit(x0, x1)
 
     def sync_annotations(self, regions: list[Region], marks: list[Mark],
                          movable: bool) -> None:
@@ -546,3 +690,31 @@ class SeriesPanel(QtWidgets.QFrame):
                 self._mark_items[m.aid] = line
             else:
                 self._mark_items[m.aid].setPos(m.t)
+
+    def sync_global_regions(self, regions: list[GlobalRegion], movable: bool) -> None:
+        """Zonas globales: se pintan en TODOS los paneles a la vez, con Z
+        más bajo que las regiones/marcas por serie (son contexto de fondo,
+        no deben tapar una anotación puesta a propósito sobre una señal
+        concreta)."""
+        keep = {r.aid for r in regions}
+        for aid in list(self._global_region_items):
+            if aid not in keep:
+                self.plot.removeItem(self._global_region_items.pop(aid))
+        for r in regions:
+            it = self._global_region_items.get(r.aid)
+            if it is None:
+                c = QtGui.QColor(r.color)
+                it = pg.LinearRegionItem(
+                    values=(r.t0, r.t1),
+                    brush=pg.mkBrush(c.red(), c.green(), c.blue(), 45),
+                    pen=pg.mkPen(r.color, width=1, style=Qt.DashLine))
+                it.setZValue(5)
+                it.aid = r.aid
+                it.sigRegionChangeFinished.connect(
+                    lambda item=it: self.sigGlobalRegionEdited.emit(
+                        item.aid, *sorted(item.getRegion())))
+                self.plot.addItem(it)
+                self._global_region_items[r.aid] = it
+            it.setMovable(movable)
+            if tuple(sorted(it.getRegion())) != (r.t0, r.t1):
+                it.setRegion((r.t0, r.t1))
