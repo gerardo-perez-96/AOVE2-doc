@@ -16,6 +16,7 @@
 
 ## Sensorización
 - Frecuencia de inserción de datos por sensor (para saber qué tiene que sostener la base de datos)
+- Muestreo máximo que capture la información necesaria. Quizá al final más de 1 HZ si hay vibración. 
 
 ## Instalación PC
 - Hay sincronización de reloj entre los datos que vienen del iolink y los que vienen de los PLCs? (NTP/PTP)

@@ -1,0 +1,197 @@
+"""Modelo de datos. Sin dependencias de Qt: se puede testear en headless."""
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field, asdict
+from typing import Any, Optional
+
+SCHEMA_VERSION = 1
+
+# Tipos de serie derivada. La receta se guarda, NUNCA los datos.
+KIND_RAW = "raw"
+KIND_ROLLING_MEAN = "rolling_mean"
+KIND_ROLLING_STD = "rolling_std"
+KIND_DERIVATIVE = "derivative"
+KIND_LAG = "lag"
+DERIVED_KINDS = (KIND_ROLLING_MEAN, KIND_ROLLING_STD, KIND_DERIVATIVE, KIND_LAG)
+
+PALETTE = [
+    "#4C9AFF", "#F5A623", "#7ED321", "#D0021B", "#BD10E0",
+    "#50E3C2", "#B8E986", "#9013FE", "#F8E71C", "#FF6F61",
+]
+
+
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
+@dataclass
+class SeriesDef:
+    """Una serie: o una columna del fichero, o una receta sobre otra serie."""
+    sid: str
+    name: str
+    kind: str = KIND_RAW
+    column: Optional[str] = None      # solo kind == raw
+    parent: Optional[str] = None      # solo derivadas
+    params: dict = field(default_factory=dict)
+    visible: bool = True
+    color: Optional[str] = None
+    order: int = 0
+    overlay_on_parent: bool = False   # dibujar en el panel del padre, eje Y derecho
+    show_stats_lines: bool = False
+    hidden_reason: str = ""           # "" | "not_loaded" (ver session._prune_missing_columns)
+
+    @property
+    def is_derived(self) -> bool:
+        return self.kind in DERIVED_KINDS
+
+    def describe(self) -> str:
+        if self.kind == KIND_ROLLING_MEAN:
+            return f"media móvil w={self.params.get('window')}"
+        if self.kind == KIND_ROLLING_STD:
+            return f"desv. móvil w={self.params.get('window')}"
+        if self.kind == KIND_DERIVATIVE:
+            return "derivada d/dx"
+        if self.kind == KIND_LAG:
+            return f"desplazada {self.params.get('lag')} muestras"
+        return "original"
+
+
+@dataclass
+class Region:
+    aid: str
+    sid: str
+    t0: float
+    t1: float
+    label: str = ""
+    color: str = "#FFD54F"
+
+    def normalized(self) -> "Region":
+        if self.t0 > self.t1:
+            self.t0, self.t1 = self.t1, self.t0
+        return self
+
+
+@dataclass
+class Mark:
+    aid: str
+    sid: str
+    t: float
+    label: str = ""
+    color: str = "#FF5252"
+
+
+@dataclass
+class SourceInfo:
+    """Identidad del fichero de datos. Si esto no cuadra al abrir, avisamos."""
+    path: str = ""
+    quick_hash: str = ""
+    size: int = 0
+    mtime: float = 0.0
+    x_mode: str = "index"           # "column" | "index"
+    x_column: Optional[str] = None
+    x_is_datetime: bool = False
+    max_samples: Optional[int] = None
+    sample_policy: str = "truncate"  # "truncate" | "decimate"
+    long_mode: str = "raw"           # "raw" | "filter" | "pivot"
+    group_column: Optional[str] = None
+    group_value: Optional[str] = None
+
+
+@dataclass
+class Project:
+    source: SourceInfo = field(default_factory=SourceInfo)
+    series: list[SeriesDef] = field(default_factory=list)
+    regions: list[Region] = field(default_factory=list)
+    marks: list[Mark] = field(default_factory=list)
+    view: dict = field(default_factory=dict)
+    schema_version: int = SCHEMA_VERSION
+
+    # --- consultas -------------------------------------------------------
+    def by_id(self, sid: str) -> Optional[SeriesDef]:
+        return next((s for s in self.series if s.sid == sid), None)
+
+    def by_name(self, name: str) -> Optional[SeriesDef]:
+        return next((s for s in self.series if s.name == name), None)
+
+    def children_of(self, sid: str) -> list[SeriesDef]:
+        return [s for s in self.series if s.parent == sid]
+
+    def ordered(self) -> list[SeriesDef]:
+        return sorted(self.series, key=lambda s: s.order)
+
+    def root_of(self, sid: str) -> SeriesDef:
+        s = self.by_id(sid)
+        seen = set()
+        while s and s.parent and s.parent not in seen:
+            seen.add(s.sid)
+            nxt = self.by_id(s.parent)
+            if nxt is None:
+                break
+            s = nxt
+        return s
+
+    # --- mutaciones ------------------------------------------------------
+    def add_series(self, s: SeriesDef) -> SeriesDef:
+        if s.color is None:
+            s.color = PALETTE[len(self.series) % len(PALETTE)]
+        if not s.order:
+            s.order = (max((x.order for x in self.series), default=-1)) + 1
+        self.series.append(s)
+        return s
+
+    def remove_series(self, sid: str) -> list[str]:
+        """Borra la serie y toda su descendencia. Devuelve los ids borrados."""
+        doomed, stack = [], [sid]
+        while stack:
+            cur = stack.pop()
+            doomed.append(cur)
+            stack.extend(c.sid for c in self.children_of(cur))
+        self.series = [s for s in self.series if s.sid not in doomed]
+        self.regions = [r for r in self.regions if r.sid not in doomed]
+        self.marks = [m for m in self.marks if m.sid not in doomed]
+        self.renumber()
+        return doomed
+
+    def reorder(self, sids_in_order: list[str]) -> None:
+        pos = {sid: i for i, sid in enumerate(sids_in_order)}
+        for s in self.series:
+            if s.sid in pos:
+                s.order = pos[s.sid]
+        self.renumber()
+
+    def renumber(self) -> None:
+        for i, s in enumerate(self.ordered()):
+            s.order = i
+
+    # --- serialización ---------------------------------------------------
+    def to_dict(self) -> dict:
+        return {
+            "schema_version": self.schema_version,
+            "source": asdict(self.source),
+            "series": [asdict(s) for s in self.series],
+            "regions": [asdict(r) for r in self.regions],
+            "marks": [asdict(m) for m in self.marks],
+            "view": self.view,
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> "Project":
+        ver = d.get("schema_version", 0)
+        if ver > SCHEMA_VERSION:
+            raise ValueError(
+                f"El JSON usa schema_version={ver} y esta versión entiende "
+                f"hasta {SCHEMA_VERSION}. Actualiza la herramienta."
+            )
+        def pick(cls, raw):
+            allowed = cls.__dataclass_fields__.keys()
+            return cls(**{k: v for k, v in raw.items() if k in allowed})
+
+        return Project(
+            source=pick(SourceInfo, d.get("source", {})),
+            series=[pick(SeriesDef, s) for s in d.get("series", [])],
+            regions=[pick(Region, r) for r in d.get("regions", [])],
+            marks=[pick(Mark, m) for m in d.get("marks", [])],
+            view=d.get("view", {}),
+            schema_version=SCHEMA_VERSION,
+        )
