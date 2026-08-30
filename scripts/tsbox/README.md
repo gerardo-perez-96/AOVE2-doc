@@ -56,6 +56,24 @@ paneles; `Ctrl+Shift+L` propaga el zoom del panel activo al resto.
 salto en el eje X (la muestra no existe). Ambos se sombrean sobre la serie.
 Menú *Análisis → Informe de datos faltantes* lista los timestamps exactos.
 
+**Análisis por secciones.** En la ventana de análisis, el desplegable "Sección"
+restringe las cuatro pestañas a un tramo con nombre -- toda región o zona
+global marcada aparece ahí sola. Compara "arranque" contra "todo el dataset"
+cambiando una casilla.
+
+**Histograma compacto.** Cuadrícula de tiles de tamaño fijo (260x170 px, hasta
+4 columnas) dentro de scroll -- ni gigante con pocas series, ni aplastado con
+muchas.
+
+**Grupos de series.** Selecciona varias series (Ctrl/Shift + click) y pulsa
+"Agrupar seleccionadas…": aparecen y desaparecen todas de golpe con un
+checkbox. No es la jerarquía de derivadas -- puede juntar series sin ningún
+parentesco. Estado mixto mostrado como texto ("nombre (2/3)"), no como
+tercer estado de checkbox. Undo restaura la mezcla exacta, no "lo contrario".
+
+**Análisis sin preselección.** El histograma y la matriz de correlación ya no
+marcan ninguna serie al abrir -- eliges tú qué mirar.
+
 **Selección por click.** Click (sin arrastrar) sobre una región en modo
 Navegar selecciona su fila en Anotaciones y trae esa pestaña al frente. Con
 solape, gana la región más estrecha.

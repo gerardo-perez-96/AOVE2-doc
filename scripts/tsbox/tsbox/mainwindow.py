@@ -12,26 +12,18 @@ from PySide6.QtCore import Qt
 from . import commands as cmd
 from . import store
 from .analysis_ui import AnalysisWindow
-from .dialogs import DerivedDialog, LoadDialog
+from .dialogs import AddColumnsDialog, DerivedDialog, LoadDialog
 from .loadworker import LoadWorker
-from .model import GlobalRegion, Mark, Note, Region, new_id
+from .model import GlobalRegion, Group, Mark, Note, Region, new_id
 from .panel import YMODE_FULL, YMODE_WINDOW, SeriesPanel
 from .session import Session
+from .transforms import fmt_x
 from .viewbox import MODE_MARK, MODE_NAV, MODE_REGION, MODE_GLOBAL_REGION
 
 AUTOSAVE_MS = 30_000
 
 
-def fmt_x(v: float, is_dt: bool) -> str:
-    if not np.isfinite(v):
-        return "—"
-    if is_dt:
-        try:
-            return (dt.datetime.fromtimestamp(v, dt.timezone.utc)
-                      .strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
-        except (OSError, ValueError, OverflowError):
-            return f"{v:.6g}"
-    return f"{v:.6g}"
+
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -77,6 +69,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.list.setIndentation(14)
         self.list.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
         self.list.setDefaultDropAction(Qt.MoveAction)
+        self.list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.list.itemChanged.connect(self._on_item_changed)
         self.list.currentItemChanged.connect(self._on_item_selected)
         self.list.model().rowsMoved.connect(self._on_rows_moved)
@@ -90,13 +83,46 @@ class MainWindow(QtWidgets.QMainWindow):
         b_col.clicked.connect(self.pick_color)
         b_del = QtWidgets.QPushButton("Eliminar")
         b_del.clicked.connect(self.delete_series)
+        b_restore = QtWidgets.QPushButton("Añadir señal…")
+        b_restore.setToolTip("Recupera del fichero de origen una columna "
+                             "que no está en la lista (p.ej. tras un "
+                             "Eliminar).")
+        b_restore.clicked.connect(self.add_raw_signal)
         b_none = QtWidgets.QPushButton("Ocultar todas")
         b_none.setToolTip("Desmarca todas las series de golpe, sin tener "
                           "que ir una a una.")
         b_none.clicked.connect(self.hide_all_series)
-        for b in (b_add, b_col, b_del, b_none):
+        for b in (b_add, b_col, b_del, b_restore, b_none):
             row.addWidget(b)
         lv.addLayout(row)
+
+        # --- grupos: mostrar/ocultar varias series de golpe. No es la
+        # jerarquía de derivadas (eso ya lo resuelve el árbol) -- un grupo
+        # puede juntar series sin ningún parentesco entre sí.
+        lv.addWidget(QtWidgets.QLabel(
+            "<b>Grupos</b><br><span style='color:#888'>selecciona varias "
+            "series arriba y pulsa Agrupar</span>"))
+        self.group_list = QtWidgets.QListWidget()
+        self.group_list.setMaximumHeight(110)
+        self.group_list.itemChanged.connect(self._on_group_item_changed)
+        self.group_list.itemDoubleClicked.connect(
+            lambda _: self.rename_group())
+        lv.addWidget(self.group_list)
+        grow = QtWidgets.QHBoxLayout()
+        b_group = QtWidgets.QPushButton("Agrupar seleccionadas…")
+        b_group.setToolTip(
+            "Selecciona varias series en la lista de arriba (Ctrl/Shift + "
+            "click) y pulsa aquí para crear un grupo con ellas.")
+        b_group.clicked.connect(self.create_group)
+        b_rename_g = QtWidgets.QPushButton("Renombrar")
+        b_rename_g.clicked.connect(self.rename_group)
+        b_ungroup = QtWidgets.QPushButton("Desagrupar")
+        b_ungroup.setToolTip("Borra el grupo. Las series no se tocan.")
+        b_ungroup.clicked.connect(self.delete_group)
+        for b in (b_group, b_rename_g, b_ungroup):
+            grow.addWidget(b)
+        lv.addLayout(grow)
+
         dock_l = QtWidgets.QDockWidget("Series", self)
         dock_l.setWidget(left)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock_l)
@@ -138,11 +164,27 @@ class MainWindow(QtWidgets.QMainWindow):
         entry.addWidget(self.note_input, 1)
         entry.addWidget(b_addnote)
         nv.addLayout(entry)
-        b_deln2 = QtWidgets.QPushButton("Borrar nota seleccionada  (Supr)")
+        nbtn = QtWidgets.QHBoxLayout()
+        b_editn = QtWidgets.QPushButton("Editar  (F2)")
+        b_editn.setToolTip(
+            "Edita el texto de la nota seleccionada, en la propia lista. "
+            "El doble click sigue saltando al tramo que se veía al "
+            "escribirla, que es lo que ya hacía antes.")
+        b_editn.clicked.connect(self.edit_selected_note)
+        nbtn.addWidget(b_editn)
+        b_deln2 = QtWidgets.QPushButton("Borrar  (Supr)")
         b_deln2.clicked.connect(self.delete_selected_note)
-        nv.addWidget(b_deln2)
+        nbtn.addWidget(b_deln2)
+        nv.addLayout(nbtn)
         QtGui.QShortcut(QtGui.QKeySequence(Qt.Key_Delete), self.note_list,
                         activated=self.delete_selected_note)
+        QtGui.QShortcut(QtGui.QKeySequence(Qt.Key_F2), self.note_list,
+                        activated=self.edit_selected_note)
+        # La edición se confirma al terminar de escribir en el item. Se
+        # conecta al delegate (no a itemChanged) para no confundir una
+        # edición del usuario con los cambios que hace refresh_notes() al
+        # repoblar la lista, que dispararían el mismo signal.
+        self.note_list.itemDelegate().commitData.connect(self._on_note_edited)
 
         right = QtWidgets.QTabWidget()
         right.addTab(tab_ann, "Anotaciones")
@@ -354,6 +396,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.refresh_visibility()
         self.refresh_annotations()
         self.refresh_annotation_table()
+        self.refresh_groups()
         self.refresh_notes()
         self._relink(self.a_sync.isChecked())
         self._apply_y_mode_to_new()
@@ -493,6 +536,7 @@ class MainWindow(QtWidgets.QMainWindow):
         s.visible = item.checkState(0) == Qt.Checked
         self.session.dirty = True
         self.refresh_visibility()
+        self.refresh_groups()   # el estado mixto de un grupo puede cambiar
 
     def _on_item_selected(self, item, _prev) -> None:
         if item:
@@ -567,6 +611,85 @@ class MainWindow(QtWidgets.QMainWindow):
             s.visible = False
         self.session.dirty = True
         self.refresh_visibility()
+        self.refresh_groups()
+
+    # -------------------------------------------------------------- grupos
+    def _selected_series_sids(self) -> list[str]:
+        sids = []
+        for it in self.list.selectedItems():
+            sid = it.data(0, Qt.UserRole)
+            if sid and sid not in sids:
+                sids.append(sid)
+        return sids
+
+    def create_group(self) -> None:
+        sids = self._selected_series_sids()
+        if not sids:
+            QtWidgets.QMessageBox.information(
+                self, "Agrupar",
+                "Selecciona una o más series en la lista de arriba "
+                "(Ctrl/Shift + click) antes de agrupar.")
+            return
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Nuevo grupo", "Nombre del grupo:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        g = Group(gid=new_id("grp"), name=name, members=sids)
+        self.undo.push(cmd.AddGroup(self, g))
+
+    def rename_group(self) -> None:
+        it = self.group_list.currentItem()
+        if it is None:
+            return
+        gid = it.data(Qt.UserRole)
+        g = next((x for x in self.session.project.groups if x.gid == gid), None)
+        if g is None:
+            return
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Renombrar grupo", "Nombre del grupo:", text=g.name)
+        name = name.strip()
+        if not ok or not name or name == g.name:
+            return
+        self.undo.push(cmd.RenameGroup(self, gid, name))
+
+    def delete_group(self) -> None:
+        it = self.group_list.currentItem()
+        if it is None:
+            return
+        self.undo.push(cmd.DeleteGroup(self, it.data(Qt.UserRole)))
+
+    def refresh_groups(self) -> None:
+        """Repuebla la lista de grupos. El checkbox de cada uno refleja si
+        TODOS sus miembros están visibles ahora mismo; si el estado es
+        mixto (o ninguno visible), se muestra desmarcado con un "(N/M)" en
+        el texto -- no se usa el tercer estado nativo de Qt (tristate) a
+        propósito: su ciclo de click depende de detalles internos difíciles
+        de testear, mientras que un checkbox binario de verdad + una pista
+        en el texto es exactamente igual de claro y 100% predecible."""
+        self.group_list.blockSignals(True)
+        self.group_list.clear()
+        proj = self.session.project
+        for g in proj.groups:
+            members = [m for sid in g.members if (m := proj.by_id(sid)) is not None]
+            n_tot = len(members)
+            n_vis = sum(1 for m in members if m.visible)
+            all_visible = n_tot > 0 and n_vis == n_tot
+            label = g.name if (n_tot == 0 or all_visible) else f"{g.name}  ({n_vis}/{n_tot})"
+            it = QtWidgets.QListWidgetItem(label)
+            it.setData(Qt.UserRole, g.gid)
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Checked if all_visible else Qt.Unchecked)
+            names = ", ".join(m.name for m in members[:10])
+            it.setToolTip(f"{n_tot} serie(s): {names}" +
+                         ("…" if n_tot > 10 else ""))
+            self.group_list.addItem(it)
+        self.group_list.blockSignals(False)
+
+    def _on_group_item_changed(self, item) -> None:
+        gid = item.data(Qt.UserRole)
+        visible = item.checkState() == Qt.Checked
+        self.undo.push(cmd.SetGroupVisibility(self, gid, visible))
 
     def pick_color(self) -> None:
         s = self.session.project.by_id(self._active_sid)
@@ -594,6 +717,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.session.project.remove_series(s.sid)
         self.session.invalidate(s.sid)
         self.session.dirty = True
+        self.rebuild_panels()
+
+    def add_raw_signal(self) -> None:
+        cols = self.session.available_columns()
+        if not cols:
+            QtWidgets.QMessageBox.information(
+                self, "Añadir señal",
+                "No hay columnas del fichero de origen pendientes de "
+                "añadir: todas las numéricas ya están en la lista de "
+                "series.")
+            return
+        dlg = AddColumnsDialog(cols, self)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        chosen = dlg.selected_columns()
+        if not chosen:
+            return
+        for c in chosen:
+            self.session.add_raw_series(c)
         self.rebuild_panels()
 
     def add_derived(self) -> None:
@@ -799,6 +941,40 @@ class MainWindow(QtWidgets.QMainWindow):
             it.setData(Qt.UserRole, n.nid)
             it.setToolTip(f"{ctx}\n\n{n.text}" if ctx else n.text)
             self.note_list.addItem(it)
+
+    def edit_selected_note(self) -> None:
+        """Abre el item seleccionado para escribir encima."""
+        items = self.note_list.selectedItems()
+        it = items[0] if items else self.note_list.currentItem()
+        if it is None:
+            return
+        # Al editar se muestra SOLO el texto: el prefijo "[dd/mm HH:MM]" es
+        # decoración de la lista, y dejarlo dentro del editor haría que el
+        # usuario lo borrase o lo guardase como parte de la nota.
+        n = self._note_by_id(it.data(Qt.UserRole))
+        if n is None:
+            return
+        it.setFlags(it.flags() | Qt.ItemIsEditable)
+        it.setText(n.text)
+        self.note_list.editItem(it)
+
+    def _note_by_id(self, nid):
+        return next((n for n in self.session.project.notes if n.nid == nid), None)
+
+    def _on_note_edited(self, editor) -> None:
+        it = self.note_list.currentItem()
+        if it is None:
+            return
+        nid = it.data(Qt.UserRole)
+        n = self._note_by_id(nid)
+        text = editor.text().strip() if hasattr(editor, "text") else ""
+        it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+        # Texto vacío = no cambiar nada. Borrar una nota es Supr, explícito;
+        # vaciarla sin querer y perderla sería una sorpresa desagradable.
+        if n is None or not text or text == n.text:
+            self.refresh_notes()
+            return
+        self.undo.push(cmd.EditNote(self, nid, text))
 
     def delete_selected_note(self) -> None:
         nids = {i.data(Qt.UserRole) for i in self.note_list.selectedItems()}

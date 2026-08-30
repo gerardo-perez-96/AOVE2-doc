@@ -52,21 +52,40 @@ def _open(app, csv):
     return w
 
 
+def _check_all(picker) -> None:
+    """SeriesPicker ya no marca nada por defecto (a propósito, para que el
+    histograma/matriz no salgan ilegibles nada más abrir). Los tests que
+    necesitan "todo marcado" lo piden explícitamente con esto."""
+    for i in range(picker.count()):
+        picker.item(i).setCheckState(Qt.Checked)
+
+
 def test_ventana_analisis_abre_y_todas_las_pestanas(app, csv):
     w = _open(app, csv)
     an = w.analysis
     assert an is not None
+    _check_all(an.m_pick)
     for i in range(an.tabs.count()):
         an.tabs.setCurrentIndex(i)
         an.refresh()
     assert an.m_table.rowCount() >= 4
 
 
+def test_nada_marcado_por_defecto_al_abrir(app, csv):
+    """Lo que se pidió explícitamente: abrir el análisis sin ninguna
+    variable pre-seleccionada, para decidir a mano qué mirar."""
+    w = _open(app, csv)
+    an = w.analysis
+    assert an.h_pick.checked() == []
+    assert an.m_pick.checked() == []
+
+
 def test_matriz_marca_significancia(app, csv):
     w = _open(app, csv)
     an = w.analysis
     an.tabs.setCurrentIndex(1)
-    an.chk_window.setChecked(False)
+    an.section_combo.setCurrentIndex(0)  # "Todo el dataset"
+    _check_all(an.m_pick)
     an.refresh_matrix()
     M = an._M
     i, j = M.names.index("a"), M.names.index("b")
@@ -78,7 +97,7 @@ def test_ccf_encuentra_el_lag_del_csv(app, csv):
     w = _open(app, csv)
     an = w.analysis
     an.tabs.setCurrentIndex(3)
-    an.chk_window.setChecked(False)
+    an.section_combo.setCurrentIndex(0)  # "Todo el dataset"
     an.c_x.setCurrentIndex(an.c_x.findText("driver"))
     an.c_y.setCurrentIndex(an.c_y.findText("c"))
     an.refresh_ccf()
@@ -90,7 +109,7 @@ def test_scan_todas_contra_target(app, csv):
     w = _open(app, csv)
     an = w.analysis
     an.tabs.setCurrentIndex(3)
-    an.chk_window.setChecked(False)
+    an.section_combo.setCurrentIndex(0)  # "Todo el dataset"
     an.c_y.setCurrentIndex(an.c_y.findText("c"))
     an._scan_all()
     assert an.c_table.rowCount() >= 4
@@ -101,7 +120,7 @@ def test_histograma_detecta_bimodal_en_ui(app, csv):
     w = _open(app, csv)
     an = w.analysis
     an.tabs.setCurrentIndex(0)
-    an.chk_window.setChecked(False)
+    an.section_combo.setCurrentIndex(0)  # "Todo el dataset"
     for i in range(an.h_pick.count()):
         it = an.h_pick.item(i)
         it.setCheckState(Qt.Checked if it.text() == "bimodal" else Qt.Unchecked)

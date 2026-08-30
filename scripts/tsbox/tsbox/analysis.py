@@ -78,6 +78,26 @@ class HistResult:
     bin_rule: str
 
 
+# Fracción mínima de los datos que debe acumular un pico para contar como
+# modo. Un nivel que la señal visita el 1% del tiempo es un régimen real
+# (en una serie de 10k muestras son 100 visitas); por debajo de eso lo más
+# probable es que sea un rizo de la KDE en la cola. Este es el filtro que
+# de verdad implementa "un valor con muchas referencias a lo largo de la
+# serie": cuenta visitas, no altura.
+MIN_MODE_MASS = 0.01
+
+# Altura mínima de un pico respecto al máximo. Filtra los rizos de la cola
+# de una lognormal/exponencial, que pueden acumular masa pero no son un
+# nivel al que la señal vuelva.
+FLOOR_FRAC = 0.08
+
+# Prominencia relativa a partir de la cual un pico se considera "bien
+# definido": un valle profundo lo separa de lo que tiene al lado. Los
+# rizos de una cola larga se quedan en 0.05-0.15; un nivel de operación
+# real, aunque se visite poco, pasa de 0.9.
+SOLID_PROM = 0.5
+
+
 def freedman_diaconis_bins(v: np.ndarray) -> int:
     """Regla robusta a colas pesadas. 'sqrt(n)' o '10 bins' te esconden modos."""
     if v.size < 4:
@@ -92,13 +112,128 @@ def freedman_diaconis_bins(v: np.ndarray) -> int:
     return int(np.clip(np.ceil((v.max() - v.min()) / h), 10, 500))
 
 
+def _area(y: np.ndarray, x: np.ndarray) -> float:
+    """np.trapz se renombró a np.trapezoid en NumPy 2; soportamos ambos."""
+    if y.size < 2:
+        return 0.0
+    f = getattr(np, "trapezoid", None) or np.trapz
+    return float(f(y, x))
+
+
+def _kde_bw(v: np.ndarray) -> float:
+    """Ancho de banda para la KDE, robusto a modos muy separados.
+
+    La regla de Scott que usa gaussian_kde por defecto escala con la
+    *desviación global*. Si la señal pasa la mayor parte del tiempo en un
+    nivel y visita otro muy distinto, esa sigma global la infla la
+    SEPARACIÓN entre niveles, no la anchura de ninguno de ellos: con
+    niveles en 0.05 y 0.9 la sigma sale ~0.29 aunque cada nivel sea de
+    ancho 0.01, y el suavizado se traga el nivel secundario.
+
+    Usar sigma robusta = min(std, IQR/1.349) ata el ancho de banda a la
+    dispersión del grueso de los datos, no al recorrido total. Para una
+    normal ambas coinciden, así que el caso unimodal no cambia; en cuanto
+    hay dos niveles separados, el IQR ignora el salto y el ancho de banda
+    se queda pequeño -- que es lo que deja ver los dos picos.
+    """
+    n = v.size
+    sd = float(np.std(v))
+    q75, q25 = np.percentile(v, [75, 25])
+    iqr = float(q75 - q25)
+    sigma = min(sd, iqr / 1.349) if iqr > 0 else sd
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = sd
+    if not np.isfinite(sigma) or sigma <= 0:
+        return 1.0
+    # Silverman sobre la sigma robusta, devuelto como FACTOR relativo a la
+    # std global, que es lo que gaussian_kde espera en bw_method.
+    h = 0.9 * sigma * n ** (-0.2)
+    return float(np.clip(h / sd, 1e-3, 1.0)) if sd > 0 else 1.0
+
+
+def _find_modes(kx: np.ndarray, ky: np.ndarray,
+                prominence: float) -> tuple[np.ndarray, np.ndarray]:
+    """Picos de la densidad, con el umbral medido contra el pico LOCAL.
+
+    Escalar el umbral por el pico más alto (`prominence * ky.max()`) hace
+    que un nivel raro pero perfectamente definido sea invisible: si el
+    98% del tiempo estás en un nivel, ese pico es altísimo y cualquier
+    otro nivel -- aunque la señal lo visite 300 veces y se vea clarísimo
+    en el gráfico -- queda por debajo del 8% de ESE máximo y se descarta.
+    Es justo el caso que se reportó: un valor con muchísimas referencias a
+    lo largo de la serie que no salía como modo.
+
+    El criterio correcto es relativo al propio pico: un pico cuenta si
+    sobresale de su entorno al menos `prominence` de su PROPIA altura.
+    Eso mide "¿está bien separado de lo que tiene al lado?", que es lo que
+    hace que un ojo lo lea como modo, y no "¿compite en altura con el
+    pico dominante?", que es otra pregunta.
+
+    Pero "relativo a su propia altura" a secas es demasiado permisivo: una
+    ondulación mínima en la cola de una exponencial también sobresale el
+    100% de su propia (minúscula) altura. Por eso un pico entra si cumple
+    el criterio local Y además tiene MASA suficiente: la fracción de datos
+    bajo su entorno debe llegar a MIN_MODE_MASS. Eso es lo que distingue
+    "un nivel que la señal visita de verdad muchas veces" de "un rizo de la
+    KDE": la pregunta del usuario era justamente sobre un valor con muchas
+    referencias a lo largo de la serie, y la masa es la que las cuenta.
+    """
+    if ky.size == 0 or ky.max() <= 0:
+        return np.empty(0), np.empty(0)
+    pk, props = signal.find_peaks(ky, prominence=0.0)
+    if pk.size == 0:
+        return np.empty(0), np.empty(0)
+    prom = props["prominences"]
+    # Criterio local: sobresale de su entorno respecto a su propia altura.
+    local_ok = prom >= prominence * ky[pk]
+    # Masa: fracción de datos que acumula el pico en SU cuenca, delimitada
+    # por los valles inmediatos a cada lado. Las bases que devuelve
+    # find_peaks no sirven aquí: para un rizo en la cola de una
+    # exponencial la base se extiende hasta el arranque de la curva, y la
+    # masa sale inflada por densidad que no es suya.
+    total = _area(ky, kx)
+    valleys = signal.find_peaks(-ky)[0]
+    mass = np.empty(pk.size)
+    for i, p_i in enumerate(pk):
+        left = valleys[valleys < p_i]
+        right = valleys[valleys > p_i]
+        lo = int(left[-1]) if left.size else 0
+        hi = int(right[0]) + 1 if right.size else ky.size
+        mass[i] = _area(ky[lo:hi], kx[lo:hi])
+    mass = mass / total if total > 0 else np.zeros_like(mass)
+    mass_ok = mass >= MIN_MODE_MASS
+    # Tercer filtro, contra el máximo global. Existe por las colas largas
+    # (lognormal, exponencial): ahí los rizos de la KDE pueden acumular
+    # masa suficiente sin ser un nivel al que la señal vuelva.
+    #
+    # Pero un nivel poco frecuente ES bajito por definición -- un nivel que
+    # ocupa el 5% del tiempo tiene un pico ~20 veces menor que el
+    # dominante -- así que aplicar el suelo a todos escondería justo lo que
+    # se quiere ver. Por eso el suelo se levanta para los picos BIEN
+    # definidos: si un pico está claramente separado de su entorno
+    # (prominencia relativa alta) y además acumula masa de sobra, es un
+    # nivel real por bajo que sea, y el suelo no le aplica. Un rizo de cola
+    # no cumple lo primero: su prominencia relativa es de 0.05-0.15.
+    solid = prom >= SOLID_PROM * ky[pk]
+    floor_ok = (ky[pk] >= FLOOR_FRAC * ky.max()) | solid
+    keep = local_ok & mass_ok & floor_ok
+    # El pico dominante entra siempre: una distribución con datos tiene al
+    # menos un modo, y devolver cero modos por un umbral sería absurdo.
+    if not keep.any():
+        keep[int(np.argmax(ky[pk]))] = True
+    return kx[pk[keep]], ky[pk[keep]] / ky.max()
+
+
 def histogram(y: np.ndarray, bins: int | str = "auto",
               kde: bool = True, prominence: float = 0.08) -> HistResult:
     """Histograma + densidad suavizada + detección de modos.
 
     Los modos se buscan sobre la KDE, no sobre el histograma: los picos del
     histograma dependen del binning y te inventan multimodalidad.
-    `prominence` es fracción del pico máximo; súbelo si ves modos fantasma.
+    `prominence` es la fracción de su PROPIA altura que un pico debe
+    sobresalir de su entorno (ver _find_modes); súbelo si ves modos
+    fantasma. El ancho de banda lo fija _kde_bw, robusto a niveles muy
+    separados.
     """
     y = clean(y)
     n_nan = int((~np.isfinite(y)).sum())
@@ -119,12 +254,11 @@ def histogram(y: np.ndarray, bins: int | str = "auto",
     kx = ky = modes = weights = np.empty(0)
     if kde and v.size >= 20 and np.ptp(v) > 0:
         try:
-            kd = stats.gaussian_kde(v)
+            kd = stats.gaussian_kde(v, bw_method=_kde_bw(v))
             kx = np.linspace(v.min(), v.max(), 512)
             ky = kd(kx)
             if ky.max() > 0:
-                pk, props = signal.find_peaks(ky, prominence=prominence * ky.max())
-                modes, weights = kx[pk], ky[pk] / ky.max()
+                modes, weights = _find_modes(kx, ky, prominence)
         except Exception:
             kx = ky = np.empty(0)
 

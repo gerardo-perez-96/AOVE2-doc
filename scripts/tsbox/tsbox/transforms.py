@@ -1,11 +1,31 @@
 """Recetas y estadísticas. Se recalculan siempre desde el origen."""
 from __future__ import annotations
 
+import datetime as dt
+
 import numpy as np
 import pandas as pd
 
 from .model import (KIND_DERIVATIVE, KIND_LAG, KIND_ROLLING_MEAN,
                     KIND_ROLLING_STD)
+
+
+def fmt_x(v: float, is_dt: bool) -> str:
+    """Formato común del eje X, en UTC siempre (ver docs/zona_horaria...).
+
+    Vive aquí (sin Qt) para que cualquier módulo pueda usarlo sin arriesgar
+    un import circular con mainwindow.py -- lo necesita también
+    analysis_ui.py para el selector de secciones.
+    """
+    if not np.isfinite(v):
+        return "—"
+    if is_dt:
+        try:
+            return (dt.datetime.fromtimestamp(v, dt.timezone.utc)
+                      .strftime("%Y-%m-%d %H:%M:%S.%f")[:-3])
+        except (OSError, ValueError, OverflowError):
+            return f"{v:.6g}"
+    return f"{v:.6g}"
 
 
 def rolling_mean(y: np.ndarray, window: int, center: bool = True) -> np.ndarray:

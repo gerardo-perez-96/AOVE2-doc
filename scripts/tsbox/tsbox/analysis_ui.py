@@ -12,11 +12,45 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 from . import analysis as A
+from .transforms import fmt_x
 
 SIG_BG = QtGui.QColor("#1B5E20")
 SIG_RAW_BG = QtGui.QColor("#4E342E")
 NEG = QtGui.QColor("#EF5350")
 POS = QtGui.QColor("#42A5F5")
+
+
+HIST_TILE_W = 260   # tamaño BASE de cada mini-histograma: compacto y
+HIST_TILE_H = 170   # predecible, no se estira aunque haya pocas series
+HIST_MAX_COLS = 4
+HIST_MAX_TILES = 64   # tope de histogramas dibujados a la vez
+
+
+def _hist_grid_cols(n: int) -> int:
+    import math
+    return max(1, min(HIST_MAX_COLS, math.ceil(math.sqrt(max(1, n)))))
+
+
+def hist_grid(n: int, cols: int = 0, rows: int = 0) -> tuple[int, int]:
+    """Rejilla MxN para n histogramas.
+
+    Con cols/rows a 0 se decide sola (comportamiento de siempre: casi
+    cuadrada, tope HIST_MAX_COLS). Si el usuario fija una de las dos, la
+    otra se deduce para que quepan TODAS las series -- nunca se recorta
+    la rejilla por debajo de lo necesario, porque una serie marcada que
+    no se dibuja es peor que hacer scroll. Si fija las dos y no caben,
+    manda el número de columnas y se añaden filas.
+    """
+    n = max(1, int(n))
+    cols = max(0, int(cols))
+    rows = max(0, int(rows))
+    if cols <= 0 and rows <= 0:
+        cols = _hist_grid_cols(n)
+    elif cols <= 0:
+        cols = -(-n // rows)          # ceil: filas fijas, columnas las que hagan falta
+    ncols = max(1, cols)
+    nrows = max(1, max(rows, -(-n // ncols)))
+    return ncols, nrows
 
 
 def heat(r: float) -> QtGui.QColor:
@@ -37,14 +71,16 @@ class SeriesPicker(QtWidgets.QListWidget):
         self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
 
     def populate(self, session, checked: set[str] | None = None) -> None:
+        """Sin selección previa, no se marca NADA por defecto. Marcar todo
+        de entrada hace ilegible el histograma o la matriz nada más abrir
+        la ventana -- mejor que el usuario elija qué mirar."""
         prev = checked if checked is not None else set(self.checked())
         self.clear()
         for s in session.project.ordered():
             it = QtWidgets.QListWidgetItem(s.name)
             it.setData(Qt.UserRole, s.sid)
             it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            it.setCheckState(Qt.Checked if (not prev or s.sid in prev)
-                             else Qt.Unchecked)
+            it.setCheckState(Qt.Checked if s.sid in prev else Qt.Unchecked)
             it.setForeground(QtGui.QColor(s.color or "#DDD"))
             self.addItem(it)
 
@@ -59,20 +95,37 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.session = session
         self.main = main
         self.setWindowTitle("Análisis")
-        self.resize(1180, 820)
         self.setWindowFlags(self.windowFlags() | Qt.Window)
+        self.setSizeGripEnabled(True)
+        # Arranca ocupando ~85% de la pantalla (con un mínimo razonable en
+        # monitores pequeños) en vez de un 1180x820 fijo: la matriz de
+        # correlación y una rejilla de histogramas grandes necesitan sitio.
+        self.setMinimumSize(900, 600)
+        scr = QtGui.QGuiApplication.primaryScreen()
+        av = scr.availableGeometry() if scr else QtCore.QRect(0, 0, 1400, 900)
+        self.resize(max(1180, int(av.width() * 0.85)),
+                    max(820, int(av.height() * 0.85)))
 
         root = QtWidgets.QVBoxLayout(self)
 
         # --- barra común
         bar = QtWidgets.QHBoxLayout()
-        self.chk_window = QtWidgets.QCheckBox("Solo la ventana visible")
-        self.chk_window.setChecked(True)
-        self.chk_window.setToolTip(
-            "Calcula sobre el rango X que estás viendo, no sobre todo el fichero.")
+        bar.addWidget(QtWidgets.QLabel("Sección:"))
+        self.section_combo = QtWidgets.QComboBox()
+        self.section_combo.setMinimumWidth(260)
+        self.section_combo.setToolTip(
+            "Restringe TODO el análisis (las cuatro pestañas) a un tramo "
+            "concreto. 'Ventana visible' es lo que estés viendo ahora mismo "
+            "en el gráfico; las demás son las regiones y zonas globales que "
+            "ya tengas marcadas -- crea una zona global 'arranque' en la "
+            "ventana principal y aparecerá aquí.")
+        self.section_combo.currentIndexChanged.connect(lambda _: self.refresh())
+        bar.addWidget(self.section_combo)
+        self.section_lbl = QtWidgets.QLabel("")
+        self.section_lbl.setStyleSheet("color:#888;")
+        bar.addWidget(self.section_lbl)
         b_ref = QtWidgets.QPushButton("Recalcular  (F5)")
         b_ref.clicked.connect(self.refresh)
-        bar.addWidget(self.chk_window)
         bar.addStretch(1)
         bar.addWidget(b_ref)
         root.addLayout(bar)
@@ -93,13 +146,61 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.tabs.currentChanged.connect(lambda _: self.refresh())
 
     # ------------------------------------------------------------------
+    def refresh_sections(self) -> None:
+        """Repuebla el selector de secciones con lo que haya marcado en la
+        ventana principal ahora mismo: regiones, zonas globales, y las dos
+        opciones fijas (todo el dataset / ventana visible). Se hace en cada
+        refresh() para que una zona creada mientras el análisis está
+        abierto aparezca sin tener que cerrar y reabrir la ventana.
+        """
+        combo = self.section_combo
+        cur = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Todo el dataset", None)
+        combo.addItem("Ventana visible", "window")
+
+        is_dt = self.session.project.source.x_is_datetime
+        proj = self.session.project
+        sections = []
+        for g in proj.global_regions:
+            label = g.label or "(sin nombre)"
+            sections.append((g.t0, f"{label}  · global", (g.t0, g.t1)))
+        for r in proj.regions:
+            s = proj.by_id(r.sid)
+            label = r.label or "(sin nombre)"
+            sections.append((r.t0, f"{label}  · {s.name if s else '?'}",
+                            (r.t0, r.t1)))
+        for _, text, rng in sorted(sections, key=lambda t: t[0]):
+            combo.addItem(text, rng)
+
+        idx = combo.findData(cur) if not isinstance(cur, tuple) else -1
+        if isinstance(cur, tuple):
+            for i in range(combo.count()):
+                if combo.itemData(i) == cur:
+                    idx = i
+                    break
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+        rng = combo.currentData()
+        if isinstance(rng, tuple):
+            t0, t1 = rng
+            self.section_lbl.setText(
+                f"({fmt_x(t0, is_dt)} → {fmt_x(t1, is_dt)})")
+        else:
+            self.section_lbl.setText("")
+
     def _xrange(self):
-        if not self.chk_window.isChecked():
+        rng = self.section_combo.currentData()
+        if rng is None:
             return None, None
-        for p in self.main.panels.values():
-            if p.isVisible():
-                return tuple(p.plot.viewRange()[0])
-        return None, None
+        if rng == "window":
+            for p in self.main.panels.values():
+                if p.isVisible():
+                    return tuple(p.plot.viewRange()[0])
+            return None, None
+        return rng   # (t0, t1) de una región o zona global concreta
 
     def data(self, sid: str) -> np.ndarray:
         x0, x1 = self._xrange()
@@ -157,6 +258,50 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.h_norm.setChecked(True)
         self.h_norm.toggled.connect(lambda _: self.refresh_hist())
         f.addRow(self.h_norm)
+
+        # --- tamaño de cada histograma y rejilla MxN elegida a mano
+        self.h_zoom = QtWidgets.QSlider(Qt.Horizontal)
+        self.h_zoom.setRange(50, 400)       # % sobre el tile base 260x170
+        self.h_zoom.setValue(100)
+        self.h_zoom.setToolTip(
+            "Tamaño de cada histograma, en % del tamaño base. Súbelo para "
+            "ver bien una distribución concreta: los que no quepan se "
+            "alcanzan con la barra de scroll.")
+        self.h_zoom_lbl = QtWidgets.QLabel("100%")
+        self.h_zoom.valueChanged.connect(
+            lambda v: (self.h_zoom_lbl.setText(f"{v}%"), self.refresh_hist()))
+        zrow = QtWidgets.QHBoxLayout()
+        zrow.addWidget(self.h_zoom, 1)
+        zrow.addWidget(self.h_zoom_lbl)
+        f.addRow("Tamaño", zrow)
+
+        self.h_cols = QtWidgets.QSpinBox()
+        self.h_cols.setRange(0, 16)
+        self.h_cols.setSpecialValueText("auto")
+        self.h_cols.setToolTip(
+            "Columnas de la rejilla. 'auto' la reparte casi cuadrada.")
+        self.h_cols.valueChanged.connect(lambda _: self.refresh_hist())
+        self.h_rows = QtWidgets.QSpinBox()
+        self.h_rows.setRange(0, 16)
+        self.h_rows.setSpecialValueText("auto")
+        self.h_rows.setToolTip(
+            "Filas de la rejilla. Si fijas filas y columnas y no caben "
+            "todas las series, se añaden filas: nunca se deja de dibujar "
+            "una serie marcada.")
+        self.h_rows.valueChanged.connect(lambda _: self.refresh_hist())
+        grow = QtWidgets.QHBoxLayout()
+        grow.addWidget(self.h_rows)
+        grow.addWidget(QtWidgets.QLabel("x"))
+        grow.addWidget(self.h_cols)
+        f.addRow("Rejilla (filas x col)", grow)
+
+        self.h_fit = QtWidgets.QCheckBox("Ajustar al ancho de la ventana")
+        self.h_fit.setToolTip(
+            "Reparte el ancho disponible entre las columnas en vez de usar "
+            "el tamaño fijo. Con pocas series los histogramas se hacen "
+            "grandes y no hay scroll horizontal.")
+        self.h_fit.toggled.connect(lambda _: self.refresh_hist())
+        f.addRow(self.h_fit)
         side.addLayout(f)
 
         self.h_info = QtWidgets.QPlainTextEdit()
@@ -170,22 +315,56 @@ class AnalysisWindow(QtWidgets.QDialog):
         cont.setMaximumWidth(300)
         lay.addWidget(cont)
 
+        # GraphicsLayoutWidget SIN scroll se estira para llenar el hueco
+        # disponible: con 2-3 series cada histograma se vuelve enorme (eso
+        # es lo "ilegible de lo grande"); con muchas, se aplasta al revés.
+        # Dentro de un QScrollArea, cada mini-histograma mantiene un tamaño
+        # FIJO y compacto (260x170) sea cual sea el número de series, y se
+        # scrollea si no caben todas -- ni gigante ni aplastado.
         self.h_layout = pg.GraphicsLayoutWidget()
-        lay.addWidget(self.h_layout, 1)
+        self.h_scroll = QtWidgets.QScrollArea()
+        self.h_scroll.setWidgetResizable(True)
+        self.h_scroll.setWidget(self.h_layout)
+        lay.addWidget(self.h_scroll, 1)
         return w
+
+    def _hist_tile_size(self, ncols: int) -> tuple[int, int]:
+        """Tamaño de cada tile: el base escalado por el slider, o repartido
+        a lo ancho del viewport si se ha marcado 'ajustar al ancho'. En
+        modo ajuste se conserva la proporción del tile base para que un
+        histograma ancho no salga con 20 px de alto."""
+        k = self.h_zoom.value() / 100.0
+        tw, th = int(round(HIST_TILE_W * k)), int(round(HIST_TILE_H * k))
+        if self.h_fit.isChecked():
+            avail = self.h_scroll.viewport().width() - 24
+            if avail > 0:
+                tw = max(120, avail // max(1, ncols))
+                th = max(90, int(round(tw * HIST_TILE_H / HIST_TILE_W * k)))
+        return tw, th
 
     def refresh_hist(self) -> None:
         self.h_layout.clear()
         self.h_info.clear()
-        sids = self.h_pick.checked()[:8]
+        sids = self.h_pick.checked()[:HIST_MAX_TILES]
+        ncols, nrows = hist_grid(len(sids), self.h_cols.value(),
+                                 self.h_rows.value())
+        tile_w, tile_h = self._hist_tile_size(ncols)
         lines = []
         for i, sid in enumerate(sids):
             y = self.data(sid)
             bins = self.h_bins.value() or "auto"
             h = A.histogram(y, bins, kde=self.h_norm.isChecked(),
                             prominence=self.h_prom.value())
-            pl = self.h_layout.addPlot(row=i, col=0, title=self.name(sid))
-            pl.setLabel("bottom", "valor")
+            pl = self.h_layout.addPlot(row=i // ncols, col=i % ncols,
+                                       title=self.name(sid))
+            # Tamaño explícito por tile: el base HIST_TILE_* escalado por
+            # el slider (o repartido a lo ancho si se pide ajustar). Fijar
+            # min y max evita que el layout lo estire para llenar hueco.
+            pl.setMaximumWidth(tile_w)
+            pl.setMinimumWidth(tile_w)
+            pl.setMaximumHeight(tile_h)
+            pl.setMinimumHeight(tile_h)
+            pl.setTitle(self.name(sid), size="9pt")
             pl.showGrid(x=True, y=True, alpha=0.2)
             if h.n == 0:
                 lines.append(f"{self.name(sid)}: sin datos válidos")
@@ -218,6 +397,28 @@ class AnalysisWindow(QtWidgets.QDialog):
                     desc += "  <- multimodal: puede haber regímenes distintos"
             lines.append(desc)
         self.h_info.setPlainText("\n\n".join(lines))
+
+        # QScrollArea con setWidgetResizable(True) estira el widget interior
+        # para llenar el viewport si este no tiene tamaño propio -- eso
+        # anulaba el ancho/alto fijo de cada tile en cuanto sobraba hueco
+        # (con 1-2 series, se veían gigantes otra vez). Fijar aquí el
+        # tamaño del GraphicsLayoutWidget al contenido real del grid hace
+        # que el scroll area lo respete: ni se estira de más, ni se
+        # aplasta -- solo aparece scrollbar si de verdad no cabe.
+        used_rows = (len(sids) + ncols - 1) // ncols if sids else 0
+        used_cols = min(ncols, len(sids)) if sids else 0
+        pad = 24
+        self.h_layout.setFixedSize(
+            max(1, used_cols * tile_w + pad),
+            max(1, used_rows * tile_h + pad))
+
+    def resizeEvent(self, ev):   # noqa: N802 (API de Qt)
+        """En modo 'ajustar al ancho' el tamaño del tile depende del
+        viewport, así que hay que recalcular al redimensionar la ventana."""
+        super().resizeEvent(ev)
+        if getattr(self, "h_fit", None) is not None and self.h_fit.isChecked() \
+                and self.tabs.currentIndex() == 0:
+            self.refresh_hist()
 
     # ================================================== matriz
     def _tab_matrix(self) -> QtWidgets.QWidget:
@@ -605,6 +806,7 @@ class AnalysisWindow(QtWidgets.QDialog):
     def refresh(self) -> None:
         if self.session.df is None:
             return
+        self.refresh_sections()
         self.h_pick.populate(self.session)
         self.m_pick.populate(self.session)
         self._sid_combo(self.a_sid)

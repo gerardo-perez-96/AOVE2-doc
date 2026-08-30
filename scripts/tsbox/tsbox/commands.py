@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from PySide6.QtGui import QUndoCommand
 
-from .model import GlobalRegion, Mark, Note, Region
+from .model import GlobalRegion, Group, Mark, Note, Region
 
 
 class _Base(QUndoCommand):
@@ -160,6 +160,108 @@ class DeleteMark(_Base):
 
     def undo(self):
         self.win.session.project.marks.append(self.mark)
+        self.touch()
+
+
+class _GroupBase(_Base):
+    def touch(self, sid: str | None = None) -> None:
+        # Crear/renombrar/borrar un grupo no cambia ninguna serie por sí
+        # mismo -- solo hace falta refrescar la lista de grupos. El toggle
+        # de visibilidad (SetGroupVisibility) SÍ toca series y por eso pide
+        # además refresh_list + refresh_visibility (ver su propio touch).
+        self.win.session.dirty = True
+        self.win.refresh_groups()
+
+
+class AddGroup(_GroupBase):
+    def __init__(self, win, group: Group):
+        super().__init__(win, "Crear grupo")
+        self.group = group
+
+    def redo(self):
+        self.win.session.project.groups.append(self.group)
+        self.touch()
+
+    def undo(self):
+        self.win.session.project.groups = [
+            g for g in self.win.session.project.groups if g.gid != self.group.gid]
+        self.touch()
+
+
+class DeleteGroup(_GroupBase):
+    def __init__(self, win, gid: str):
+        super().__init__(win, "Eliminar grupo")
+        self.group = next(g for g in win.session.project.groups if g.gid == gid)
+
+    def redo(self):
+        self.win.session.project.groups = [
+            g for g in self.win.session.project.groups if g.gid != self.group.gid]
+        self.touch()
+
+    def undo(self):
+        self.win.session.project.groups.append(self.group)
+        self.touch()
+
+
+class RenameGroup(_GroupBase):
+    def __init__(self, win, gid: str, name: str):
+        super().__init__(win, "Renombrar grupo")
+        self.gid = gid
+        g = next(x for x in win.session.project.groups if x.gid == gid)
+        self.old, self.new = g.name, name
+
+    def _set(self, name: str):
+        g = next((x for x in self.win.session.project.groups
+                  if x.gid == self.gid), None)
+        if g is not None:
+            g.name = name
+        self.touch()
+
+    def redo(self):
+        self._set(self.new)
+
+    def undo(self):
+        self._set(self.old)
+
+
+class SetGroupVisibility(_Base):
+    """Enciende/apaga TODAS las series de un grupo de golpe.
+
+    Guarda el estado previo de CADA miembro, no solo "estaba encendido o
+    apagado en conjunto": si el grupo estaba en estado mixto (algunas
+    visibles, otras no, porque alguien tocó una individualmente), deshacer
+    devuelve exactamente esa mezcla, no un simple "todo lo contrario".
+    """
+
+    def __init__(self, win, gid: str, visible: bool):
+        super().__init__(win, "Mostrar grupo" if visible else "Ocultar grupo")
+        self.gid = gid
+        self.visible = visible
+        proj = win.session.project
+        g = next(x for x in proj.groups if x.gid == gid)
+        self.prev = {sid: s.visible for sid in g.members
+                    if (s := proj.by_id(sid)) is not None}
+
+    def touch(self, sid: str | None = None) -> None:
+        self.win.session.dirty = True
+        self.win.refresh_list()
+        self.win.refresh_visibility()
+        self.win.refresh_groups()
+
+    def redo(self):
+        proj = self.win.session.project
+        for sid in self.prev:
+            s = proj.by_id(sid)
+            if s is not None:
+                s.visible = self.visible
+        self.touch()
+
+    def undo(self):
+        proj = self.win.session.project
+        for sid, v in self.prev.items():
+            s = proj.by_id(sid)
+            if s is not None:
+                s.visible = v
         self.touch()
 
 

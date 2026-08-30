@@ -300,6 +300,52 @@ class LoadDialog(QtWidgets.QDialog):
         return out
 
 
+class AddColumnsDialog(QtWidgets.QDialog):
+    """Recupera como serie(s) columnas del CSV que no están en la lista --
+    p.ej. una señal borrada con "Eliminar", cuyos datos siguen en memoria."""
+
+    def __init__(self, columns: list[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Añadir señal")
+        self.resize(360, 420)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.addWidget(QtWidgets.QLabel(
+            "Columnas del fichero de origen que no están en la lista de "
+            "series (p.ej. borradas antes):"))
+
+        self.listw = QtWidgets.QListWidget()
+        for c in columns:
+            it = QtWidgets.QListWidgetItem(str(c))
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Unchecked)
+            self.listw.addItem(it)
+        lay.addWidget(self.listw, 1)
+
+        row = QtWidgets.QHBoxLayout()
+        b_all = QtWidgets.QPushButton("Todas")
+        b_none = QtWidgets.QPushButton("Ninguna")
+        b_all.clicked.connect(lambda: self._check_all(True))
+        b_none.clicked.connect(lambda: self._check_all(False))
+        row.addWidget(b_all)
+        row.addWidget(b_none)
+        row.addStretch(1)
+        lay.addLayout(row)
+
+        bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok |
+                                        QtWidgets.QDialogButtonBox.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+
+    def _check_all(self, state: bool) -> None:
+        for r in range(self.listw.count()):
+            self.listw.item(r).setCheckState(Qt.Checked if state else Qt.Unchecked)
+
+    def selected_columns(self) -> list[str]:
+        return [self.listw.item(r).text() for r in range(self.listw.count())
+                if self.listw.item(r).checkState() == Qt.Checked]
+
+
 class DerivedDialog(QtWidgets.QDialog):
     """Filtro de media móvil, desviación móvil o derivada."""
 

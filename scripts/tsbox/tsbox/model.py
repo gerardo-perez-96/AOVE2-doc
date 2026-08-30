@@ -138,6 +138,20 @@ class SourceInfo:
 
 
 @dataclass
+class Group:
+    """Un grupo de series para mostrarlas u ocultarlas todas de golpe.
+
+    No es jerarquía como parent/derivada (que siempre relaciona una serie
+    con SU derivada): un grupo puede juntar series de origen distinto que
+    no tienen ningún parentesco -- "todas las de temperatura", "línea A
+    completa". Es puro atajo de visibilidad, nada más.
+    """
+    gid: str
+    name: str
+    members: list[str] = field(default_factory=list)   # sids
+
+
+@dataclass
 class Project:
     source: SourceInfo = field(default_factory=SourceInfo)
     series: list[SeriesDef] = field(default_factory=list)
@@ -145,6 +159,7 @@ class Project:
     marks: list[Mark] = field(default_factory=list)
     global_regions: list[GlobalRegion] = field(default_factory=list)
     notes: list[Note] = field(default_factory=list)
+    groups: list[Group] = field(default_factory=list)
     view: dict = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
 
@@ -177,9 +192,44 @@ class Project:
         if s.color is None:
             s.color = PALETTE[len(self.series) % len(PALETTE)]
         if not s.order:
-            s.order = (max((x.order for x in self.series), default=-1)) + 1
+            if s.parent is not None:
+                s.order = self._order_under(s.parent)
+            else:
+                s.order = (max((x.order for x in self.series), default=-1)) + 1
         self.series.append(s)
         return s
+
+    def _order_under(self, parent_sid: str) -> int:
+        """Hueco de orden justo DEBAJO del padre y de las derivadas que ya
+        cuelguen de él.
+
+        Antes toda serie nueva iba al final (`max(order) + 1`), así que una
+        derivada que no se superpone sobre la original aparecía como último
+        panel de la ventana, lejísimos de la señal de la que sale: para
+        compararlas había que arrastrar el panel a mano cada vez. Lo natural
+        es que salga pegada debajo de su original, que es donde la vas a
+        mirar.
+
+        Se desplaza el orden de todo lo que venga después para abrir hueco.
+        Es O(n) sobre una lista de series, que son decenas, no millones.
+        """
+        parent = self.by_id(parent_sid)
+        if parent is None:
+            return (max((x.order for x in self.series), default=-1)) + 1
+        # El final del bloque del padre: él y toda su descendencia ya creada.
+        block = {parent.sid}
+        changed = True
+        while changed:
+            changed = False
+            for x in self.series:
+                if x.parent in block and x.sid not in block:
+                    block.add(x.sid)
+                    changed = True
+        slot = max(x.order for x in self.series if x.sid in block) + 1
+        for x in self.series:
+            if x.order >= slot:
+                x.order += 1
+        return slot
 
     def remove_series(self, sid: str) -> list[str]:
         """Borra la serie y toda su descendencia. Devuelve los ids borrados."""
@@ -196,6 +246,12 @@ class Project:
         # borrar la nota entera -- el texto sigue siendo válido.
         for n in self.notes:
             n.series = [sid for sid in n.series if sid not in doomed]
+        # Un grupo sin miembros no tiene ningún propósito -- se limpia solo,
+        # a diferencia de una nota (cuyo texto sigue teniendo sentido aunque
+        # pierda todas sus referencias).
+        for g in self.groups:
+            g.members = [sid for sid in g.members if sid not in doomed]
+        self.groups = [g for g in self.groups if g.members]
         self.renumber()
         return doomed
 
@@ -220,6 +276,7 @@ class Project:
             "marks": [asdict(m) for m in self.marks],
             "global_regions": [asdict(g) for g in self.global_regions],
             "notes": [asdict(n) for n in self.notes],
+            "groups": [asdict(g) for g in self.groups],
             "view": self.view,
         }
 
@@ -242,6 +299,7 @@ class Project:
             marks=[pick(Mark, m) for m in d.get("marks", [])],
             global_regions=[pick(GlobalRegion, g) for g in d.get("global_regions", [])],
             notes=[pick(Note, n) for n in d.get("notes", [])],
+            groups=[pick(Group, g) for g in d.get("groups", [])],
             view=d.get("view", {}),
             schema_version=SCHEMA_VERSION,
         )
