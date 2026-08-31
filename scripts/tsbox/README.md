@@ -56,6 +56,47 @@ paneles; `Ctrl+Shift+L` propaga el zoom del panel activo al resto.
 salto en el eje X (la muestra no existe). Ambos se sombrean sobre la serie.
 Menú *Análisis → Informe de datos faltantes* lista los timestamps exactos.
 
+**Análisis por secciones.** En la ventana de análisis, el desplegable "Sección"
+restringe las cuatro pestañas a un tramo con nombre -- toda región o zona
+global marcada aparece ahí sola. Compara "arranque" contra "todo el dataset"
+cambiando una casilla.
+
+**Histograma compacto.** Cuadrícula de tiles de tamaño fijo (260x170 px, hasta
+4 columnas) dentro de scroll -- ni gigante con pocas series, ni aplastado con
+muchas.
+
+**Grupos de series.** Selecciona varias series (Ctrl/Shift + click) y pulsa
+"Agrupar seleccionadas…": aparecen y desaparecen todas de golpe con un
+checkbox. No es la jerarquía de derivadas -- puede juntar series sin ningún
+parentesco. Estado mixto mostrado como texto ("nombre (2/3)"), no como
+tercer estado de checkbox. Undo restaura la mezcla exacta, no "lo contrario".
+
+**Análisis sin preselección.** El histograma y la matriz de correlación ya no
+marcan ninguna serie al abrir -- eliges tú qué mirar.
+
+**Selección por click.** Click (sin arrastrar) sobre una región en modo
+Navegar selecciona su fila en Anotaciones y trae esa pestaña al frente. Con
+solape, gana la región más estrecha.
+
+**Ocultar todas.** Botón junto a Derivar/Color/Eliminar: desmarca todas las
+series de golpe.
+
+**Zonas globales.** Botón "Zona global" (`G`): arrastra en cualquier panel y la
+franja aparece en TODOS a la vez -- "zona de arranque", "parada programada".
+No pertenece a ninguna serie. Editar, renombrar, borrar y undo funcionan igual
+que las demás anotaciones.
+
+**Notas libres.** `Ctrl+N` desde cualquier sitio lleva el foco a un cuadro de
+texto para apuntar algo al vuelo, sin dibujar nada sobre la señal. Captura sola
+qué series veías y en qué rango. Undo/redo, persistidas en el JSON.
+
+**Botón lateral del ratón.** Atrás/adelante desplazan la ventana un 20% de su
+ancho, en cualquier modo, sin tocar el zoom.
+
+**Arrastrar paneles.** Cada panel tiene un icono de agarre (⠿⠿) en su cabecera:
+arrástralo sobre otro panel, mitad superior para colocarte antes, mitad
+inferior para después. Con undo.
+
 **Árbol de series.** La lista de la izquierda es un árbol: cada serie de origen
 es una raíz, sus derivadas cuelgan debajo plegadas por defecto y tienen SU
 PROPIO panel (no comparten gráfico con eje Y secundario salvo que actives

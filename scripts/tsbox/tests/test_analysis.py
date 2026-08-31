@@ -74,6 +74,257 @@ def test_ljung_box_distingue():
     assert p_ar < 1e-6
 
 
+# --- ADF (estacionariedad) -----------------------------------------------
+def test_adf_detecta_estacionaria():
+    y = rng.standard_normal(2000)   # ruido blanco: claramente estacionario
+    d = A.adf_test(y)
+    assert d["stationary_5pct"] is True
+    assert d["stat"] < d["crit_5pct"]
+
+
+def test_adf_detecta_paseo_aleatorio():
+    y = np.cumsum(rng.standard_normal(2000))   # random walk: NO estacionario
+    d = A.adf_test(y)
+    assert d["stationary_5pct"] is False
+    assert d["stat"] > d["crit_1pct"]
+
+
+def test_adf_pocas_muestras():
+    d = A.adf_test(rng.standard_normal(5))
+    assert d["stationary_5pct"] is None
+    assert np.isnan(d["stat"])
+
+
+# --- Granger --------------------------------------------------------------
+def test_granger_detecta_relacion_causal():
+    n = 3000
+    rng2 = np.random.default_rng(7)
+    x = rng2.standard_normal(n)
+    # y depende de x desplazada 3 pasos + ruido propio
+    y = np.zeros(n)
+    for t in range(3, n):
+        y[t] = 0.8 * x[t - 3] + 0.3 * rng2.standard_normal()
+    res = A.granger_causality(x, y, lag=5)
+    assert res.p_value < 1e-6
+    assert res.f_stat > 10
+    assert res.r2_gain > 0.3
+
+
+def test_granger_no_detecta_series_independientes():
+    """Con series independientes, p<0.05 debe pasar ~5% de las veces (es la
+    definición de alpha), no nunca -- por eso se agregan varias semillas en
+    vez de exigir p>0.05 en una única ejecución, que fallaría 1 de cada 20
+    veces por puro diseño del test."""
+    n = 2000
+    false_positives = 0
+    for seed in range(20):
+        rng2 = np.random.default_rng(seed)
+        x = rng2.standard_normal(n)
+        y = rng2.standard_normal(n)
+        res = A.granger_causality(x, y, lag=5)
+        if res.p_value < 0.05:
+            false_positives += 1
+    assert false_positives <= 4   # ~5% esperado; margen generoso sobre 20 tiradas
+
+
+def test_granger_direccion_importa():
+    """X causa Y, pero Y no debe 'causar' X (más allá del azar)."""
+    n = 3000
+    rng2 = np.random.default_rng(11)
+    x = rng2.standard_normal(n)
+    y = np.zeros(n)
+    for t in range(2, n):
+        y[t] = 0.9 * x[t - 2] + 0.2 * rng2.standard_normal()
+    xy = A.granger_causality(x, y, lag=4)   # x -> y: debe ser significativo
+    yx = A.granger_causality(y, x, lag=4)   # y -> x: no debería
+    assert xy.p_value < 1e-4
+    assert yx.p_value > 0.01
+
+
+def test_granger_scan_aplica_fdr():
+    n = 1500
+    rng2 = np.random.default_rng(5)
+    x = rng2.standard_normal(n)
+    y = rng2.standard_normal(n)
+    rows = A.granger_scan(x, y, max_lag=10)
+    assert len(rows) == 10
+    assert all(hasattr(r, "sig_fdr") for r in rows)
+    # con series independientes, casi ningun lag deberia sobrevivir al FDR
+    assert sum(r.sig_fdr for r in rows) <= 1
+
+
+def test_granger_pocas_muestras_no_explota():
+    res = A.granger_causality(np.arange(5.0), np.arange(5.0), lag=3)
+    assert np.isnan(res.f_stat)
+
+
+# --- exclusión de zonas (arranque, parada...) ----------------------------
+def test_mask_excluded_pone_nan_dentro_del_intervalo():
+    x = np.arange(10, dtype=float)
+    y = np.arange(10, dtype=float) * 10
+    out = A.mask_excluded(x, y, [(3.0, 6.0)])
+    assert np.isnan(out[3:7]).all()
+    assert not np.isnan(out[:3]).any()
+    assert not np.isnan(out[7:]).any()
+    assert not np.isnan(x).any()   # x nunca se toca
+
+
+def test_mask_excluded_varios_intervalos():
+    x = np.arange(20, dtype=float)
+    y = x.copy()
+    out = A.mask_excluded(x, y, [(2.0, 4.0), (15.0, 17.0)])
+    assert np.isnan(out[2:5]).all()
+    assert np.isnan(out[15:18]).all()
+    assert not np.isnan(out[5:15]).any()
+
+
+def test_mask_excluded_intervalo_invertido():
+    x = np.arange(10, dtype=float)
+    y = x.copy()
+    out = A.mask_excluded(x, y, [(6.0, 3.0)])   # t0 > t1
+    assert np.isnan(out[3:7]).all()
+
+
+def test_mask_excluded_sin_intervalos_no_cambia():
+    x = np.arange(10, dtype=float)
+    y = np.arange(10, dtype=float)
+    out = A.mask_excluded(x, y, [])
+    assert np.array_equal(out, y)
+
+
+def test_mask_excluded_afecta_a_histograma():
+    n = 2000
+    x = np.arange(n, dtype=float)
+    y = np.concatenate([rng.normal(100, 1, 200), rng.normal(0, 1, n - 200)])
+    masked = A.mask_excluded(x, y, [(0.0, 199.0)])
+    h = A.histogram(masked)
+    assert h.n == n - 200
+    assert h.n_nan == 200
+    assert len(h.modes) == 1   # sin la zona de arranque ya no es bimodal
+
+
+# --- normalización de señal ---------------------------------------------
+def test_normalize_zscore_media_cero_std_uno():
+    y = rng.normal(5, 3, 2000)
+    z = A.normalize_signal(y, "zscore")
+    v = z[np.isfinite(z)]
+    assert v.mean() == pytest.approx(0.0, abs=1e-9)
+    assert v.std() == pytest.approx(1.0, abs=1e-9)
+
+
+def test_normalize_minmax_rango_01():
+    y = rng.normal(5, 3, 2000)
+    m = A.normalize_signal(y, "minmax")
+    v = m[np.isfinite(m)]
+    assert v.min() == pytest.approx(0.0, abs=1e-9)
+    assert v.max() == pytest.approx(1.0, abs=1e-9)
+
+
+def test_normalize_none_no_cambia():
+    y = rng.normal(5, 3, 100)
+    assert np.array_equal(A.normalize_signal(y, "none"), y)
+
+
+def test_normalize_preserva_nan():
+    y = np.array([1.0, np.nan, 3.0, 4.0])
+    z = A.normalize_signal(y, "zscore")
+    assert np.isnan(z[1])
+    m = A.normalize_signal(y, "minmax")
+    assert np.isnan(m[1])
+
+
+def test_normalize_constante_no_divide_por_cero():
+    y = np.full(50, 7.0)
+    z = A.normalize_signal(y, "zscore")
+    assert np.all(np.isfinite(z))
+    m = A.normalize_signal(y, "minmax")
+    assert np.all(np.isfinite(m))
+
+
+# --- heatmap tiempo x valor ---------------------------------------------
+def test_heatmap_detecta_cambio_de_regimen():
+    n = 4000
+    t = np.arange(n, dtype=float)
+    y = np.concatenate([rng.normal(0, 1, n // 2), rng.normal(10, 1, n // 2)])
+    hm = A.time_value_heatmap(t, y, n_bins_time=20, n_bins_value=40)
+    assert hm.n == n and hm.n_nan == 0
+
+    # columna del principio: masa concentrada cerca de valor=0
+    # columna del final: masa concentrada cerca de valor=10
+    y_centers = 0.5 * (hm.y_edges[:-1] + hm.y_edges[1:])
+    first_col_peak = y_centers[np.argmax(hm.density[:, 0])]
+    last_col_peak = y_centers[np.argmax(hm.density[:, -1])]
+    assert first_col_peak < 3
+    assert last_col_peak > 7
+
+
+def test_heatmap_normalizacion_column_ignora_huecos():
+    n = 2000
+    t = np.arange(n, dtype=float)
+    y = rng.normal(0, 1, n)
+    y[: n // 2] = np.nan   # primera mitad sin datos validos
+    hm = A.time_value_heatmap(t, y, n_bins_time=10, n_bins_value=30,
+                              normalize="column")
+    # cada columna con datos debe normalizar a la misma masa total
+    # (columnas sin ningun dato valido quedan en cero, no cuentan)
+    col_totals = hm.density.sum(axis=0) * np.diff(hm.y_edges)[:, None].sum(axis=0)
+    nonzero = hm.col_mass > 0
+    assert nonzero.sum() >= 4   # al menos las columnas de la segunda mitad
+
+
+def test_heatmap_vacio():
+    hm = A.time_value_heatmap(np.full(10, np.nan), np.full(10, np.nan))
+    assert hm.n == 0
+
+
+def test_heatmap_cuenta_nan():
+    t = np.arange(10, dtype=float)
+    y = np.array([1.0, 2.0, np.nan, 4.0, 5.0, np.nan, 7.0, 8.0, 9.0, 10.0])
+    hm = A.time_value_heatmap(t, y, n_bins_time=5, n_bins_value=5)
+    assert hm.n == 8 and hm.n_nan == 2
+
+
+# --- boxplot / outliers -------------------------------------------------
+def test_boxplot_stats_sin_outliers():
+    y = rng.normal(0, 1, 2000)
+    bx = A.boxplot_stats(y)
+    assert bx.n == 2000 and bx.n_nan == 0
+    assert bx.q1 < bx.median < bx.q3
+    assert bx.outliers.size < 30   # ~0.7% esperado en una normal con k=1.5
+
+
+def test_boxplot_stats_detecta_outliers_inyectados():
+    y = np.concatenate([rng.normal(0, 1, 1000), [50.0, -50.0, 60.0]])
+    bx = A.boxplot_stats(y)
+    assert 50.0 in bx.outliers and -50.0 in bx.outliers and 60.0 in bx.outliers
+    assert bx.whisker_hi < 50.0
+
+
+def test_boxplot_stats_k_mayor_menos_outliers():
+    y = np.concatenate([rng.normal(0, 1, 1000), rng.normal(0, 1, 1000) * 4])
+    bx15 = A.boxplot_stats(y, k=1.5)
+    bx30 = A.boxplot_stats(y, k=3.0)
+    assert bx30.outliers.size <= bx15.outliers.size
+
+
+def test_boxplot_stats_cuenta_nan():
+    y = np.array([1.0, 2.0, 3.0, np.nan, 5.0])
+    bx = A.boxplot_stats(y)
+    assert bx.n == 4 and bx.n_nan == 1
+
+
+def test_boxplot_stats_vacio():
+    bx = A.boxplot_stats(np.full(10, np.nan))
+    assert bx.n == 0 and np.isnan(bx.median)
+
+
+def test_boxplot_stats_outlier_idx_apunta_al_valor_correcto():
+    y = np.array([1.0, 2.0, np.nan, 3.0, 100.0, 2.5])
+    bx = A.boxplot_stats(y)
+    for idx, val in zip(bx.outlier_idx, bx.outliers):
+        assert y[idx] == val
+
+
 # --- correlación y significancia --------------------------------------
 def test_corr_exacta():
     x = np.arange(200.0)

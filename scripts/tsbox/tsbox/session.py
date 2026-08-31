@@ -227,6 +227,28 @@ class Session:
         return transforms.window_stats(self.x, self.values(sid), x0, x1)
 
     # ------------------------------------------------------------------
+    def available_columns(self) -> list[str]:
+        """Columnas numéricas del fichero ya cargado en memoria que no están
+        siendo usadas por ninguna serie de origen: candidatas para recuperar
+        con add_raw_series() tras un "Eliminar", sin volver a leer el fichero
+        (el CSV completo ya vive en self.df desde la apertura)."""
+        if self.df is None:
+            return []
+        used = {s.column for s in self.project.series if s.kind == KIND_RAW}
+        xcol = self.project.source.x_column
+        return [c for c in loader.numeric_columns(self.df)
+                if c not in used and c != xcol]
+
+    def add_raw_series(self, column: str) -> SeriesDef:
+        """Vuelve a dar de alta una columna del CSV como serie de origen,
+        p.ej. tras borrarla con "Eliminar". Los datos ya están en self.df:
+        no hace falta releer el fichero."""
+        s = SeriesDef(sid=new_id("s"), name=column, kind=KIND_RAW, column=column)
+        self.project.add_series(s)
+        self.dirty = True
+        return s
+
+    # ------------------------------------------------------------------
     def add_derived(self, parent_sid: str, kind: str, params: dict,
                     overlay: bool = False) -> SeriesDef:
         parent = self.project.by_id(parent_sid)
