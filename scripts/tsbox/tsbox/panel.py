@@ -6,7 +6,7 @@ import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from .model import GlobalRegion, Mark, Region, SeriesDef
+from .model import GlobalMark, GlobalRegion, Mark, Region, SeriesDef
 from .transforms import fmt_stats
 from .viewbox import MODE_NAV, EditViewBox
 
@@ -241,6 +241,7 @@ class SeriesPanel(QtWidgets.QFrame):
     sigRegionDrawn = QtCore.Signal(str, float, float)      # sid, t0, t1
     sigGlobalRegionDrawn = QtCore.Signal(float, float)     # t0, t1 (TODAS las series)
     sigMarkDrawn = QtCore.Signal(str, float)               # sid, t
+    sigGlobalMarkDrawn = QtCore.Signal(float)              # t (TODAS las series)
     sigPanStep = QtCore.Signal(int)                        # -1 atrás, +1 adelante
     sigRegionEdited = QtCore.Signal(str, float, float)     # aid, t0, t1
     sigGlobalRegionEdited = QtCore.Signal(str, float, float)  # aid, t0, t1
@@ -259,6 +260,7 @@ class SeriesPanel(QtWidgets.QFrame):
         self.sid = sdef.sid
         self._region_items: dict[str, pg.LinearRegionItem] = {}
         self._global_region_items: dict[str, pg.LinearRegionItem] = {}
+        self._global_mark_items: dict[str, pg.InfiniteLine] = {}
         self._mark_items: dict[str, pg.InfiniteLine] = {}
         self._gap_items: list[pg.LinearRegionItem] = []
         self._gap_overlay: GapOverlay | None = None
@@ -346,6 +348,7 @@ class SeriesPanel(QtWidgets.QFrame):
         self.vb.sigDrawRegion.connect(self._on_draw_region)
         self.vb.sigDrawGlobalRegion.connect(self._on_draw_global_region)
         self.vb.sigMark.connect(lambda x: self.sigMarkDrawn.emit(self.sid, x))
+        self.vb.sigGlobalMark.connect(self.sigGlobalMarkDrawn.emit)
         self.vb.sigPanStep.connect(self.sigPanStep.emit)
         self.vb.sigNavClick.connect(self._on_nav_click)
         # Sin throttle, sigMouseMoved dispara a ritmo NATIVO del ratón (puede
@@ -683,17 +686,22 @@ class SeriesPanel(QtWidgets.QFrame):
             if aid not in keep_m:
                 self.plot.removeItem(self._mark_items.pop(aid))
         for m in marks:
-            if m.aid not in self._mark_items:
+            line = self._mark_items.get(m.aid)
+            if line is None:
                 line = pg.InfiniteLine(pos=m.t, angle=90, movable=False,
                                        pen=pg.mkPen(m.color, width=2),
                                        label=m.label or "",
                                        labelOpts={"position": 0.92,
                                                   "color": m.color})
                 line.setZValue(20)
+                line._color = m.color
                 self.plot.addItem(line)
                 self._mark_items[m.aid] = line
             else:
-                self._mark_items[m.aid].setPos(m.t)
+                line.setPos(m.t)
+            if line._color != m.color:
+                line.setPen(pg.mkPen(m.color, width=2))
+                line._color = m.color
 
     def sync_global_regions(self, regions: list[GlobalRegion], movable: bool) -> None:
         """Zonas globales: se pintan en TODOS los paneles a la vez, con Z
@@ -725,3 +733,31 @@ class SeriesPanel(QtWidgets.QFrame):
                 for line in it.lines:
                     line.setPen(pg.mkPen(r.color, width=1, style=Qt.DashLine))
                 it._color = r.color
+
+    def sync_global_marks(self, marks: list[GlobalMark]) -> None:
+        """Marcas globales: un instante puntual en TODOS los paneles a la
+        vez, igual que sync_global_regions pero para un punto en vez de un
+        tramo. No son movibles -- igual que las marcas por serie, se borran
+        y se vuelven a poner en vez de arrastrarse."""
+        keep = {m.aid for m in marks}
+        for aid in list(self._global_mark_items):
+            if aid not in keep:
+                self.plot.removeItem(self._global_mark_items.pop(aid))
+        for m in marks:
+            line = self._global_mark_items.get(m.aid)
+            if line is None:
+                line = pg.InfiniteLine(pos=m.t, angle=90, movable=False,
+                                       pen=pg.mkPen(m.color, width=2,
+                                                    style=Qt.DashLine),
+                                       label=m.label or "",
+                                       labelOpts={"position": 0.85,
+                                                  "color": m.color})
+                line.setZValue(15)
+                line._color = m.color
+                self.plot.addItem(line)
+                self._global_mark_items[m.aid] = line
+            else:
+                line.setPos(m.t)
+            if line._color != m.color:
+                line.setPen(pg.mkPen(m.color, width=2, style=Qt.DashLine))
+                line._color = m.color

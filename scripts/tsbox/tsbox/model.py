@@ -110,6 +110,19 @@ class Mark:
 
 
 @dataclass
+class GlobalMark:
+    """Un instante puntual marcado en TODOS los paneles a la vez -- el
+    equivalente de GlobalRegion pero para un punto en vez de un tramo:
+    "cambio de turno", "parada de emergencia"... No pertenece a una señal
+    concreta, igual que GlobalRegion frente a Region.
+    """
+    aid: str
+    t: float
+    label: str = ""
+    color: str = "#FF5252"
+
+
+@dataclass
 class Note:
     """Un apunte de texto libre, sin necesidad de marcar nada en el gráfico.
 
@@ -166,6 +179,7 @@ class Project:
     regions: list[Region] = field(default_factory=list)
     marks: list[Mark] = field(default_factory=list)
     global_regions: list[GlobalRegion] = field(default_factory=list)
+    global_marks: list[GlobalMark] = field(default_factory=list)
     notes: list[Note] = field(default_factory=list)
     groups: list[Group] = field(default_factory=list)
     view: dict = field(default_factory=dict)
@@ -287,6 +301,7 @@ class Project:
             "regions": [asdict(r) for r in self.regions],
             "marks": [asdict(m) for m in self.marks],
             "global_regions": [asdict(g) for g in self.global_regions],
+            "global_marks": [asdict(m) for m in self.global_marks],
             "notes": [asdict(n) for n in self.notes],
             "groups": [asdict(g) for g in self.groups],
             "view": self.view,
@@ -310,6 +325,7 @@ class Project:
             regions=[pick(Region, r) for r in d.get("regions", [])],
             marks=[pick(Mark, m) for m in d.get("marks", [])],
             global_regions=[pick(GlobalRegion, g) for g in d.get("global_regions", [])],
+            global_marks=[pick(GlobalMark, m) for m in d.get("global_marks", [])],
             notes=[pick(Note, n) for n in d.get("notes", [])],
             groups=[pick(Group, g) for g in d.get("groups", [])],
             view=d.get("view", {}),

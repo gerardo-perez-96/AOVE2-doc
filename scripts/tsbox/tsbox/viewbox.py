@@ -17,12 +17,14 @@ MODE_NAV = "nav"
 MODE_REGION = "region"
 MODE_MARK = "mark"
 MODE_GLOBAL_REGION = "global_region"
+MODE_GLOBAL_MARK = "global_mark"
 
 CURSORS = {
     MODE_NAV: Qt.OpenHandCursor,
     MODE_REGION: Qt.SplitHCursor,
     MODE_MARK: Qt.CrossCursor,
     MODE_GLOBAL_REGION: Qt.SizeHorCursor,
+    MODE_GLOBAL_MARK: Qt.CrossCursor,
 }
 
 
@@ -30,6 +32,7 @@ class EditViewBox(pg.ViewBox):
     sigDrawRegion = QtCore.Signal(float, float, bool)  # x0, x1, terminado
     sigDrawGlobalRegion = QtCore.Signal(float, float, bool)  # idem, toda la vista
     sigMark = QtCore.Signal(float)
+    sigGlobalMark = QtCore.Signal(float)                # click en modo Marca global
     sigPanStep = QtCore.Signal(int)                    # -1 atrás, +1 adelante
     sigNavClick = QtCore.Signal(float)                  # click simple en modo Navegar
 
@@ -76,6 +79,10 @@ class EditViewBox(pg.ViewBox):
         if (self.mode == MODE_MARK and btn == Qt.MouseButton.LeftButton):
             ev.accept()
             self.sigMark.emit(self.mapToView(ev.pos()).x())
+            return
+        if (self.mode == MODE_GLOBAL_MARK and btn == Qt.MouseButton.LeftButton):
+            ev.accept()
+            self.sigGlobalMark.emit(self.mapToView(ev.pos()).x())
             return
         if self.mode == MODE_NAV and btn == Qt.MouseButton.LeftButton:
             # El ViewBox base no hace NADA con el click izquierdo en modo

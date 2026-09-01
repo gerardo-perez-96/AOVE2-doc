@@ -14,11 +14,12 @@ from . import store
 from .analysis_ui import AnalysisWindow
 from .dialogs import AddColumnsDialog, DerivedDialog, LoadDialog
 from .loadworker import LoadWorker
-from .model import GlobalRegion, Group, Mark, Note, Region, new_id
+from .model import GlobalMark, GlobalRegion, Group, Mark, Note, Region, new_id
 from .panel import YMODE_FULL, YMODE_WINDOW, SeriesPanel
 from .session import Session
 from .transforms import fmt_x
-from .viewbox import MODE_MARK, MODE_NAV, MODE_REGION, MODE_GLOBAL_REGION
+from .viewbox import (MODE_MARK, MODE_NAV, MODE_REGION, MODE_GLOBAL_MARK,
+                      MODE_GLOBAL_REGION)
 
 AUTOSAVE_MS = 30_000
 
@@ -233,7 +234,8 @@ class MainWindow(QtWidgets.QMainWindow):
         for text, mode, key in (("Navegar", MODE_NAV, "N"),
                                 ("Región", MODE_REGION, "R"),
                                 ("Marca", MODE_MARK, "M"),
-                                ("Zona global", MODE_GLOBAL_REGION, "G")):
+                                ("Zona global", MODE_GLOBAL_REGION, "G"),
+                                ("Marca global", MODE_GLOBAL_MARK, "Shift+G")):
             a = QtGui.QAction(text, self, checkable=True, shortcut=key)
             a.setData(mode)
             a.triggered.connect(lambda _=False, m=mode: self.set_mode(m))
@@ -241,6 +243,19 @@ class MainWindow(QtWidgets.QMainWindow):
             tb.addAction(a)
             m_edit.addAction(a)
         self.mode_group.actions()[0].setChecked(True)
+
+        # Color activo: el que tendrá la PRÓXIMA región/marca/zona global que
+        # se dibuje. Un selector en la barra en vez de un diálogo al soltar
+        # el ratón -- así se elige el color una vez y se dibujan varias
+        # anotaciones del mismo grupo seguidas sin que un diálogo interrumpa
+        # cada arrastre; cambiar de color es un click cuando toca distinguir
+        # un grupo nuevo (p. ej. pasar de "arranques" a "paradas").
+        self._active_color = "#FFD54F"
+        self.b_active_color = QtWidgets.QToolButton()
+        self.b_active_color.setToolTip("Color de la próxima anotación que dibujes")
+        self.b_active_color.clicked.connect(self.pick_active_color)
+        self._update_active_color_swatch()
+        tb.addWidget(self.b_active_color)
 
         m_edit.addSeparator()
         a_undo = self.undo.createUndoAction(self, "Deshacer")
@@ -392,6 +407,7 @@ class MainWindow(QtWidgets.QMainWindow):
             p.sigRegionDrawn.connect(self.on_region_drawn)
             p.sigGlobalRegionDrawn.connect(self.on_global_region_drawn)
             p.sigMarkDrawn.connect(self.on_mark_drawn)
+            p.sigGlobalMarkDrawn.connect(self.on_global_mark_drawn)
             p.sigPanStep.connect(self.on_pan_step)
             p.sigReorderDrop.connect(self.on_panel_drop)
             p.sigRegionClicked.connect(self.on_region_clicked)
@@ -723,6 +739,17 @@ class MainWindow(QtWidgets.QMainWindow):
             for p in self.panels.values():
                 p.redraw()
 
+    def _update_active_color_swatch(self) -> None:
+        pix = QtGui.QPixmap(16, 16)
+        pix.fill(QtGui.QColor(self._active_color))
+        self.b_active_color.setIcon(QtGui.QIcon(pix))
+
+    def pick_active_color(self) -> None:
+        c = QtWidgets.QColorDialog.getColor(QtGui.QColor(self._active_color), self)
+        if c.isValid():
+            self._active_color = c.name()
+            self._update_active_color_swatch()
+
     def delete_series(self) -> None:
         s = self.session.project.by_id(self._active_sid)
         if not s:
@@ -775,7 +802,8 @@ class MainWindow(QtWidgets.QMainWindow):
     # ------------------------------------------------------ anotaciones
     def find_annotation(self, aid: str):
         for coll in (self.session.project.regions, self.session.project.marks,
-                    self.session.project.global_regions):
+                    self.session.project.global_regions,
+                    self.session.project.global_marks):
             for a in coll:
                 if a.aid == aid:
                     return a
@@ -791,7 +819,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 MODE_MARK: "Marca: click sobre la señal para poner una marca.",
                 MODE_GLOBAL_REGION: "Zona global: arrastra en cualquier panel para "
                                     "marcar una franja en TODAS las series a la vez. "
-                                    "Mantén Alt para dibujar una nueva encima de otra."}
+                                    "Mantén Alt para dibujar una nueva encima de otra.",
+                MODE_GLOBAL_MARK: "Marca global: click en cualquier panel para poner "
+                                  "una marca en TODAS las series a la vez."}
         self.status_msg.setText(hint[mode])
 
     def eventFilter(self, obj, ev) -> bool:
@@ -817,15 +847,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def on_region_drawn(self, sid: str, t0: float, t1: float) -> None:
         r = Region(aid=new_id("r"), sid=sid, t0=min(t0, t1), t1=max(t0, t1),
-                   label="")
+                   label="", color=self._active_color)
         self.undo.push(cmd.AddRegion(self, r))
 
     def on_global_region_drawn(self, t0: float, t1: float) -> None:
-        r = GlobalRegion(aid=new_id("g"), t0=min(t0, t1), t1=max(t0, t1), label="")
+        r = GlobalRegion(aid=new_id("g"), t0=min(t0, t1), t1=max(t0, t1),
+                         label="", color=self._active_color)
         self.undo.push(cmd.AddGlobalRegion(self, r))
 
     def on_mark_drawn(self, sid: str, t: float) -> None:
-        self.undo.push(cmd.AddMark(self, Mark(aid=new_id("m"), sid=sid, t=t)))
+        self.undo.push(cmd.AddMark(
+            self, Mark(aid=new_id("m"), sid=sid, t=t, color=self._active_color)))
+
+    def on_global_mark_drawn(self, t: float) -> None:
+        self.undo.push(cmd.AddGlobalMark(
+            self, GlobalMark(aid=new_id("gm"), t=t, color=self._active_color)))
 
     def on_region_edited(self, aid: str, t0: float, t1: float) -> None:
         r = self.find_annotation(aid)
@@ -864,25 +900,28 @@ class MainWindow(QtWidgets.QMainWindow):
                 [r for r in self.session.project.regions if r.sid == sid],
                 [m for m in self.session.project.marks if m.sid == sid],
                 movable)
-            # las zonas globales se ven en TODOS los paneles, no solo el suyo
+            # las zonas globales y marcas globales se ven en TODOS los
+            # paneles, no solo el suyo
             p.sync_global_regions(self.session.project.global_regions,
                                   movable_global)
+            p.sync_global_marks(self.session.project.global_marks)
 
     def refresh_annotation_table(self) -> None:
         is_dt = self.session.project.source.x_is_datetime
         rows = ([("región", r) for r in self.session.project.regions] +
                 [("marca", m) for m in self.session.project.marks] +
-                [("zona global", g) for g in self.session.project.global_regions])
+                [("zona global", g) for g in self.session.project.global_regions] +
+                [("marca global", m) for m in self.session.project.global_marks])
         rows.sort(key=lambda t: getattr(t[1], "t0", getattr(t[1], "t", 0.0)))
         self.table.blockSignals(True)
         self.table.setRowCount(len(rows))
         for i, (kind, a) in enumerate(rows):
-            if kind == "zona global":
+            if kind in ("zona global", "marca global"):
                 name = "— todas las series —"
             else:
                 s = self.session.project.by_id(a.sid)
                 name = s.name if s else "?"
-            is_point = kind == "marca"
+            is_point = kind in ("marca", "marca global")
             t0 = a.t if is_point else a.t0
             t1 = a.t if is_point else a.t1
             vals = [name, kind, fmt_x(t0, is_dt), fmt_x(t1, is_dt),
@@ -966,6 +1005,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.undo.push(cmd.DeleteGlobalRegion(self, aid))
             elif isinstance(a, Region):
                 self.undo.push(cmd.DeleteRegion(self, aid))
+            elif isinstance(a, GlobalMark):
+                self.undo.push(cmd.DeleteGlobalMark(self, aid))
             else:
                 self.undo.push(cmd.DeleteMark(self, aid))
         self.undo.endMacro()

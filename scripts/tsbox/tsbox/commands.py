@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from PySide6.QtGui import QUndoCommand
 
-from .model import GlobalRegion, Group, Mark, Note, Region
+from .model import GlobalMark, GlobalRegion, Group, Mark, Note, Region
 
 
 class _Base(QUndoCommand):
@@ -184,6 +184,39 @@ class DeleteMark(_Base):
 
     def undo(self):
         self.win.session.project.marks.append(self.mark)
+        self.touch()
+
+
+class AddGlobalMark(_Base):
+    def __init__(self, win, mark: GlobalMark):
+        super().__init__(win, "Añadir marca global")
+        self.mark = mark
+
+    def redo(self):
+        self.win.session.project.global_marks.append(self.mark)
+        self.touch()
+
+    def undo(self):
+        self.win.session.project.global_marks = [
+            m for m in self.win.session.project.global_marks
+            if m.aid != self.mark.aid]
+        self.touch()
+
+
+class DeleteGlobalMark(_Base):
+    def __init__(self, win, aid: str):
+        super().__init__(win, "Borrar marca global")
+        self.mark = next(m for m in win.session.project.global_marks
+                         if m.aid == aid)
+
+    def redo(self):
+        self.win.session.project.global_marks = [
+            m for m in self.win.session.project.global_marks
+            if m.aid != self.mark.aid]
+        self.touch()
+
+    def undo(self):
+        self.win.session.project.global_marks.append(self.mark)
         self.touch()
 
 
