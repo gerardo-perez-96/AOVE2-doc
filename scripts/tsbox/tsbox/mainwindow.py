@@ -337,7 +337,9 @@ class MainWindow(QtWidgets.QMainWindow):
                   max_samples=dlg.max_samples(), sample_policy=dlg.sample_policy(),
                   selected_columns=dlg.selected_columns(), float32=dlg.float32(),
                   long_mode=dlg.long_mode(), group_column=dlg.group_column(),
-                  group_value=dlg.group_value())
+                  group_value=dlg.group_value(),
+                  unstack_repeated_x=dlg.unstack_repeated_x(),
+                  samples_per_step=dlg.samples_per_step())
         self._path = path
 
         self._prog = QtWidgets.QProgressDialog("Preparando...", "Cancelar", 0, 100, self)

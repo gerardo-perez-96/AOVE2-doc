@@ -120,6 +120,40 @@ class LoadDialog(QtWidgets.QDialog):
         self.gb_long.setVisible(False)
         lay.addWidget(self.gb_long)
 
+        # --- eje X de baja resolución (el reloj repite el mismo valor N
+        # veces porque su granularidad es más gruesa que el muestreo real:
+        # p.ej. timestamp por hora pero una lectura cada 20 s -- 180 filas
+        # seguidas con la misma marca).
+        self.gb_repeated = QtWidgets.QGroupBox("Eje X de baja resolución detectado")
+        gr = QtWidgets.QVBoxLayout(self.gb_repeated)
+        self.repeated_msg = QtWidgets.QLabel("")
+        self.repeated_msg.setWordWrap(True)
+        self.repeated_msg.setStyleSheet("color:#FFCC80;")
+        gr.addWidget(self.repeated_msg)
+        self.chk_unstack = QtWidgets.QCheckBox(
+            "Repartir las muestras dentro de cada intervalo repetido")
+        self.chk_unstack.setChecked(True)
+        self.chk_unstack.setToolTip(
+            "Sin esto, todas las muestras de una misma marca de tiempo caen "
+            "en la MISMA columna X: se ven apiladas verticalmente y el zoom "
+            "a ese tramo no sirve de nada. Con esto, cada bloque se reparte "
+            "uniformemente entre esa marca y la siguiente.")
+        gr.addWidget(self.chk_unstack)
+        rowu = QtWidgets.QHBoxLayout()
+        rowu.addWidget(QtWidgets.QLabel("Muestras por marca de tiempo"))
+        self.spin_samples_per_step = QtWidgets.QSpinBox()
+        self.spin_samples_per_step.setRange(2, 100_000)
+        self.spin_samples_per_step.setToolTip(
+            "Precargado con el detectado automáticamente (la longitud de "
+            "bloque más frecuente). Corrígelo a mano si conoces el valor "
+            "real y el conteo automático no cuadra en algún tramo (huecos, "
+            "arranque o parada a mitad de intervalo).")
+        self.chk_unstack.toggled.connect(self.spin_samples_per_step.setEnabled)
+        rowu.addWidget(self.spin_samples_per_step)
+        gr.addLayout(rowu)
+        self.gb_repeated.setVisible(False)
+        lay.addWidget(self.gb_repeated)
+
         # --- columnas
         lay.addWidget(QtWidgets.QLabel("Series a cargar:"))
         self.table = QtWidgets.QTableWidget(0, 3)
@@ -151,15 +185,24 @@ class LoadDialog(QtWidgets.QDialog):
         self.table.itemChanged.connect(lambda *_: self._refresh_cost())
         self._refresh_table()
         self._detect_long()
+        self._detect_repeated()
         self._refresh_cost()
 
     def _detect_long(self) -> None:
         """Se detecta sobre la vista previa (500 filas), que basta para ver la
-        repetición del eje X. No hace falta leer el fichero entero."""
+        repetición del eje X. No hace falta leer el fichero entero.
+
+        Si NO hay ninguna columna candidata que separe entidades, la
+        repetición puede ser el otro caso -- baja resolución del reloj,
+        misma entidad -- que _detect_repeated() cubre con más precisión (le
+        cede el aviso en vez de mostrar el genérico de formato largo, que
+        aquí sería engañoso: no hay entidades que apilar, solo un reloj con
+        menos resolución de la real)."""
         xcol = self.x_column()
         self.long = longformat.detect(self.preview, xcol)
-        self.gb_long.setVisible(self.long.is_long)
-        if not self.long.is_long:
+        show_long = self.long.is_long and bool(self.long.group_columns)
+        self.gb_long.setVisible(show_long)
+        if not show_long:
             return
         self.long_msg.setText(self.long.message)
         self.cmb_group.blockSignals(True)
@@ -167,6 +210,34 @@ class LoadDialog(QtWidgets.QDialog):
         self.cmb_group.addItems(self.long.group_columns)
         self.cmb_group.blockSignals(False)
         self._on_group_changed()
+
+    def _detect_repeated(self) -> None:
+        """Eje X con la misma marca repetida N veces seguidas por falta de
+        resolución del reloj de origen (p.ej. timestamp por hora, muestreo
+        real cada 20 s -> 180 filas por marca). Solo se muestra si
+        _detect_long() no encontró una columna de entidad real -- ver su
+        docstring."""
+        xcol = self.x_column()
+        block = None
+        if xcol and xcol in self.preview.columns and not (
+                self.long.is_long and self.long.group_columns):
+            try:
+                x, _ = loader.build_x(self.preview, self.x_mode(), xcol)
+                block = loader.detect_repeated_x_block(x)
+            except Exception:
+                block = None
+        self._repeated_detected = block is not None
+        self.gb_repeated.setVisible(self._repeated_detected)
+        if block is None:
+            return
+        self.repeated_msg.setText(
+            f"El eje X repite el mismo valor en bloques de {block} filas "
+            f"seguidas: probablemente el reloj de origen tiene menos "
+            f"resolución que el muestreo real (p.ej. una marca por hora, "
+            f"pero una lectura cada pocos segundos).\n\n"
+            f"Sin corregirlo, esas {block} muestras caen todas en la misma "
+            f"columna X y se ven apiladas, no como una serie temporal.")
+        self.spin_samples_per_step.setValue(block)
 
     def _on_group_changed(self) -> None:
         col = self.cmb_group.currentText()
@@ -254,6 +325,8 @@ class LoadDialog(QtWidgets.QDialog):
             self.table.blockSignals(False)
         if hasattr(self, "gb_long"):
             self._detect_long()
+        if hasattr(self, "gb_repeated"):
+            self._detect_repeated()
         if hasattr(self, "cost"):
             self._refresh_cost()
 
@@ -292,6 +365,12 @@ class LoadDialog(QtWidgets.QDialog):
 
     def sample_policy(self) -> str:
         return self.cmb_policy.currentData()
+
+    def unstack_repeated_x(self) -> bool:
+        return getattr(self, "_repeated_detected", False) and self.chk_unstack.isChecked()
+
+    def samples_per_step(self) -> int | None:
+        return self.spin_samples_per_step.value() if self.unstack_repeated_x() else None
 
     def selected_columns(self) -> list[str]:
         out = []

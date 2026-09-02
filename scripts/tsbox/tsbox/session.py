@@ -31,7 +31,8 @@ class Session:
              selected_columns: Optional[list[str]] = None,
              float32: bool = True, progress=None,
              long_mode: str = "raw", group_column: Optional[str] = None,
-             group_value=None) -> None:
+             group_value=None, unstack_repeated_x: bool = False,
+             samples_per_step: Optional[int] = None) -> None:
         """Abre el fichero. Los filtros se empujan al lector: si pides 3 de 50
         columnas y 200k de 3M filas, se leen 3 columnas y 200k filas."""
         p = Path(data_path)
@@ -71,6 +72,10 @@ class Session:
         if progress:
             progress("Construyendo eje X...", 0.65)
         x, is_dt = loader.build_x(df, x_mode, x_column)
+        if unstack_repeated_x:
+            if progress:
+                progress("Repartiendo eje X de baja resolución...", 0.72)
+            x = loader.unstack_repeated_x(x, samples_per_step)
         if progress:
             progress("Ordenando y saneando...", 0.8)
         x, df = loader.sanitize_axis(x, df)
@@ -88,6 +93,7 @@ class Session:
             x_is_datetime=is_dt, max_samples=max_samples, sample_policy=sample_policy,
             long_mode=long_mode, group_column=group_column,
             group_value=None if group_value is None else str(group_value),
+            unstack_repeated_x=unstack_repeated_x, samples_per_step=samples_per_step,
         )
 
         existing = None

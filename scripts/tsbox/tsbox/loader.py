@@ -303,6 +303,92 @@ def build_x(df: pd.DataFrame, x_mode: str, x_column: Optional[str]
     return pd.to_numeric(col, errors="coerce").to_numpy(dtype=np.float64), False
 
 
+def detect_repeated_x_block(x: np.ndarray) -> Optional[int]:
+    """Longitud de bloque más frecuente entre repeticiones consecutivas del
+    eje X, o None si no hay un patrón claro de bloques.
+
+    Caso típico: el reloj de origen solo tiene resolución de 1 h pero el
+    muestreo real es cada 20 s -- 180 filas seguidas con el MISMO timestamp,
+    luego 180 más con el siguiente. No es "formato largo" (eso es una
+    entidad distinta por fila, ver longformat.py): aquí hay una sola
+    entidad, con menos precisión de la que el reloj puede expresar.
+
+    Se usa la MODA de las longitudes de racha, no la media: un puñado de
+    rachas cortas al arrancar/parar el muestreo a mitad de hora no debe
+    desplazar la estimación del patrón dominante.
+    """
+    if x.size < 4:
+        return None
+    same = np.diff(x) == 0
+    if not same.any():
+        return None
+    # longitud de cada racha de valor repetido = num de True consecutivos + 1
+    d = np.diff(np.concatenate([[0], same.astype(np.int8), [0]]))
+    starts = np.flatnonzero(d == 1)
+    ends = np.flatnonzero(d == -1)
+    if starts.size == 0:
+        return None
+    lengths = (ends - starts) + 1        # +1: la racha de "iguales" cuenta N-1 diffs para N filas
+    vals, counts = np.unique(lengths, return_counts=True)
+    mode_len = int(vals[np.argmax(counts)])
+    return mode_len if mode_len >= 2 else None
+
+
+def unstack_repeated_x(x: np.ndarray, samples_per_step: Optional[int] = None
+                       ) -> np.ndarray:
+    """Reconstruye un eje X monótono cuando el reloj de origen repite el
+    mismo valor varias filas seguidas por falta de resolución.
+
+    Para cada bloque de longitud k con el mismo valor x0, seguido del
+    siguiente valor distinto x1, reparte las k muestras reales equiespaciadas
+    en [x0, x1) -- el ancho ya se conoce (x1 - x0), así que un bloque con
+    menos filas de las esperadas (arranque/parada a mitad de intervalo)
+    sencillamente queda con muestras algo más separadas, en vez de
+    ensancharse fuera de su intervalo real.
+
+    El ÚLTIMO bloque es el único caso sin dato: no hay x1 que mida su ancho
+    real. Ahí se usa el ancho del bloque anterior (asumiendo periodo
+    constante) repartido entre `samples_per_step` muestras si se indica
+    explícitamente, o entre las k detectadas si no -- pásalo cuando conozcas
+    el valor real de memoria (p.ej. "son 180 muestras por hora") y quieras
+    que el tramo final no dependa de cuántas filas trajo el fichero.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    n = x.size
+    if n < 2:
+        return x.copy()
+
+    out = x.copy()
+    i = 0
+    last_width = None
+    while i < n:
+        j = i
+        while j + 1 < n and x[j + 1] == x[i]:
+            j += 1
+        k = j - i + 1                      # tamaño del bloque [i, j]
+        if k > 1:
+            if j + 1 < n:
+                # bloque intermedio: el ancho real es la distancia al
+                # siguiente valor distinto, sin importar cuántas muestras
+                # tenga -- así un tramo con menos filas de las esperadas
+                # (arranque/parada a mitad de intervalo) no se ensancha.
+                width = x[j + 1] - x[i]
+                last_width = width
+                count = k
+            elif last_width is not None:
+                # último bloque, sin valor siguiente: no hay ancho real que
+                # medir, así que se reutiliza el del bloque anterior.
+                width = last_width
+                count = samples_per_step or k
+            else:
+                width = 1.0                # sin ninguna referencia: separa 1 unidad
+                count = k
+            step = width / count if count else width
+            out[i:j + 1] = x[i] + step * np.arange(k)
+        i = j + 1
+    return out
+
+
 def sanitize_axis(x: np.ndarray, df: pd.DataFrame) -> tuple[np.ndarray, pd.DataFrame]:
     """Quita filas con X invalido y ordena por X. Sin esto todo lo demas miente
     (y setClipToView de pyqtgraph exige X creciente o dibuja basura)."""

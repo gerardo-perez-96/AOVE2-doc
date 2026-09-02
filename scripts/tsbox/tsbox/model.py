@@ -170,6 +170,8 @@ class SourceInfo:
     long_mode: str = "raw"           # "raw" | "filter" | "pivot"
     group_column: Optional[str] = None
     group_value: Optional[str] = None
+    unstack_repeated_x: bool = False
+    samples_per_step: Optional[int] = None
 
 
 @dataclass
