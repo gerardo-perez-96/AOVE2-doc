@@ -43,6 +43,22 @@ def csv(tmp_path):
     return p
 
 
+@pytest.fixture
+def csv_wave(tmp_path):
+    """Serie con una frecuencia conocida, para probar el espectro y el
+    filtro Butterworth sin depender del ruido de la fixture `csv`."""
+    n = 4096
+    fs = 50.0
+    rng = np.random.default_rng(1)
+    t = pd.date_range("2024-01-01", periods=n, freq=pd.Timedelta(seconds=1 / fs))
+    sig = (np.sin(2 * np.pi * 5.0 * np.arange(n) / fs)
+          + 0.05 * rng.standard_normal(n))
+    df = pd.DataFrame({"ts": t, "wave": sig})
+    p = tmp_path / "wave.csv"
+    df.to_csv(p, index=False)
+    return p
+
+
 def _open(app, csv):
     w = MainWindow()
     w.session.open(csv, "column", "ts")
@@ -149,3 +165,87 @@ def test_informe_huecos_detecta_nan_y_salto(app, csv):
     assert rep["n_nan"] == 41
     assert len(rep["time_gaps"]) == 1
     assert rep["muestras_perdidas_estimadas"] == 200   # se tiraron las filas 1500:1700
+
+
+def test_espectro_detecta_frecuencia_conocida(app, csv_wave):
+    w = _open(app, csv_wave)
+    an = w.analysis
+    an.tabs.setCurrentIndex(5)   # Espectro de frecuencia
+    an.section_combo.setCurrentIndex(0)  # "Todo el dataset"
+    an.sp_sid.setCurrentIndex(an.sp_sid.findText("wave"))
+    an.refresh_spectrum()
+    res = an._spectrum
+    assert res.peak_freqs.size >= 1
+    dominant = res.peak_freqs[np.argmax(res.peak_power)]
+    assert dominant == pytest.approx(5.0, abs=0.5)
+
+
+def test_espectro_metodo_fft_tambien_encuentra_el_pico(app, csv_wave):
+    w = _open(app, csv_wave)
+    an = w.analysis
+    an.tabs.setCurrentIndex(5)
+    an.sp_sid.setCurrentIndex(an.sp_sid.findText("wave"))
+    an.sp_method.setCurrentIndex(an.sp_method.findData("fft"))
+    an.refresh_spectrum()
+    res = an._spectrum
+    assert res.method == "fft"
+    dominant = res.peak_freqs[np.argmax(res.peak_power)]
+    assert dominant == pytest.approx(5.0, abs=0.3)
+
+
+def test_espectro_opciones_de_eje_no_revientan(app, csv_wave):
+    """Periodo, log-X y log-Y (dB) son solo formas de dibujar el mismo
+    resultado -- combinarlas no debería fallar ni cambiar qué pico se
+    detecta."""
+    w = _open(app, csv_wave)
+    an = w.analysis
+    an.tabs.setCurrentIndex(5)
+    an.sp_sid.setCurrentIndex(an.sp_sid.findText("wave"))
+    for period in (False, True):
+        for logx in (False, True):
+            for logy in (False, True):
+                an.sp_period.setChecked(period)
+                an.sp_logx.setChecked(logx)
+                an.sp_logy.setChecked(logy)
+                an.refresh_spectrum()
+    dominant = an._spectrum.peak_freqs[np.argmax(an._spectrum.peak_power)]
+    assert dominant == pytest.approx(5.0, abs=0.5)
+
+
+def test_espectro_crea_filtro_butterworth_desde_el_pico(app, csv_wave, monkeypatch):
+    w = _open(app, csv_wave)
+    an = w.analysis
+    an.tabs.setCurrentIndex(5)
+    an.sp_sid.setCurrentIndex(an.sp_sid.findText("wave"))
+    an.refresh_spectrum()
+    before = len(w.session.project.series)
+
+    from tsbox.dialogs import DerivedDialog
+    # El diálogo pide confirmación con Ok/Cancel -- exec() bloquearía el
+    # test esperando un click real, así que se simula "Ok" directamente.
+    monkeypatch.setattr(DerivedDialog, "exec",
+                        lambda self: QtWidgets.QDialog.Accepted)
+    an._spectrum_to_filter()
+
+    assert len(w.session.project.series) == before + 1
+    new = w.session.project.series[-1]
+    assert new.kind == "butterworth"
+    assert new.params["cutoff"] == pytest.approx(5.0, abs=0.5)
+    assert np.isfinite(w.session.values(new.sid)).sum() > 0
+
+
+def test_espectro_sin_calcular_no_crea_filtro(app, csv_wave, monkeypatch):
+    """Sin haber calculado el espectro todavía, el botón avisa en vez de
+    abrir el diálogo con datos inventados. OJO: no se cambia de pestaña
+    aquí -- tabs.setCurrentIndex dispara un refresh() completo que
+    calcularía el espectro solo, y la ventana abre en la pestaña de
+    histograma (índice 0), así que _spectrum sigue sin existir."""
+    w = _open(app, csv_wave)
+    an = w.analysis
+    assert an.tabs.currentIndex() == 0
+    assert getattr(an, "_spectrum", None) is None
+    before = len(w.session.project.series)
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information",
+                        staticmethod(lambda *a, **k: None))
+    an._spectrum_to_filter()
+    assert len(w.session.project.series) == before

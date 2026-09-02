@@ -103,17 +103,22 @@ PROPIO panel (no comparten gráfico con eje Y secundario salvo que actives
 también "superponer"). Expandir/plegar el nodo muestra u oculta sus paneles sin
 tocar los checkboxes.
 
-**Series derivadas.** Media móvil, desviación móvil, derivada y desplazamiento.
-Se guarda la **receta**, no los datos: el JSON pesa kilobytes y puedes cambiar
-la ventana sin regenerar nada. Opción de superponerlas sobre la original con
-eje Y secundario (necesario: la derivada no comparte rango con la señal).
+**Series derivadas.** Media móvil, desviación móvil, derivada, desplazamiento y
+filtro Butterworth (paso bajo/alto/banda/rechazo banda, orden y fase cero o
+causal configurables). Se guarda la **receta**, no los datos: el JSON pesa
+kilobytes y puedes cambiar la ventana o el corte sin regenerar nada. Opción de
+superponerlas sobre la original con eje Y secundario (necesario: la derivada
+no comparte rango con la señal).
 
 **Estadísticas** (μ, σ, var, min, max) de la **ventana visible**, en la cabecera
 del panel y opcionalmente como líneas horizontales.
 
 **Análisis** (`Ctrl+A`): histogramas con detección de modos, matriz de
-correlación con significancia, ACF/PACF y correlación cruzada con desfase.
-Ver `docs/estadistica.md` — hay decisiones ahí que cambian las conclusiones.
+correlación con significancia, ACF/PACF, espectro de frecuencia (Welch o FFT,
+con detección de picos) y correlación cruzada con desfase. Desde el espectro,
+un botón crea directamente un filtro Butterworth en la frecuencia del pico
+dominante. Ver `docs/estadistica.md` y `docs/espectro_y_butterworth.md` — hay
+decisiones ahí que cambian las conclusiones.
 
 **Guardado.** Sidecar `<fichero>.tsbox.json` junto al original. Autoguardado
 cada 30 s, escritura atómica (`.tmp` + `os.replace`) y `.bak` rotativo. El JSON
@@ -127,7 +132,7 @@ vez de mezclar anotaciones con datos que no les corresponden.
       loader.py      lectura, construcción del eje X, saneado. Sin Qt.
       transforms.py  recetas y estadísticas de ventana. Sin Qt.
       gaps.py        NaN vs saltos de muestreo. Sin Qt.
-      analysis.py    histogramas, correlación, ACF/PACF, CCF. Sin Qt.
+      analysis.py    histogramas, correlación, ACF/PACF, espectro, CCF. Sin Qt.
       store.py       JSON atómico + verificación de origen. Sin Qt.
       session.py     estado en memoria y caché. Sin Qt.
       viewbox.py     máquina de estados de los gestos del ratón.

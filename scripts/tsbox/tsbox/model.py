@@ -13,7 +13,9 @@ KIND_ROLLING_MEAN = "rolling_mean"
 KIND_ROLLING_STD = "rolling_std"
 KIND_DERIVATIVE = "derivative"
 KIND_LAG = "lag"
-DERIVED_KINDS = (KIND_ROLLING_MEAN, KIND_ROLLING_STD, KIND_DERIVATIVE, KIND_LAG)
+KIND_BUTTER = "butterworth"
+DERIVED_KINDS = (KIND_ROLLING_MEAN, KIND_ROLLING_STD, KIND_DERIVATIVE, KIND_LAG,
+                 KIND_BUTTER)
 
 PALETTE = [
     "#4C9AFF", "#F5A623", "#7ED321", "#D0021B", "#BD10E0",
@@ -54,6 +56,18 @@ class SeriesDef:
             return "derivada d/dx"
         if self.kind == KIND_LAG:
             return f"desplazada {self.params.get('lag')} muestras"
+        if self.kind == KIND_BUTTER:
+            label = {"low": "paso bajo", "high": "paso alto",
+                     "bandpass": "paso banda", "bandstop": "rechazo banda"
+                     }.get(self.params.get("btype"), self.params.get("btype"))
+            freq = f"{self.params.get('cutoff'):.4g}" if self.params.get("cutoff") \
+                is not None else "?"
+            if self.params.get("btype") in ("bandpass", "bandstop") \
+                    and self.params.get("cutoff2") is not None:
+                freq += f"–{self.params['cutoff2']:.4g}"
+            phase = "fase cero" if self.params.get("zero_phase", True) else "causal"
+            return (f"Butterworth {label} orden {self.params.get('order')} "
+                    f"@ {freq} ({phase})")
         return "original"
 
 

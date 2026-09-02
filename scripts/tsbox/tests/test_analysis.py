@@ -74,6 +74,69 @@ def test_ljung_box_distingue():
     assert p_ar < 1e-6
 
 
+# --- espectro de frecuencia -----------------------------------------------
+def test_spectrum_welch_detecta_tono_puro():
+    fs = 100.0
+    n = 4000
+    t = np.arange(n) / fs
+    y = np.sin(2 * np.pi * 10.0 * t)
+    res = A.spectrum(y, fs, method="welch", nperseg=512)
+    assert res.peak_freqs.size >= 1
+    dominant = res.peak_freqs[np.argmax(res.peak_power)]
+    assert dominant == pytest.approx(10.0, abs=0.5)
+
+
+def test_spectrum_fft_tiene_mas_resolucion_que_welch():
+    fs = 100.0
+    n = 4000
+    t = np.arange(n) / fs
+    y = np.sin(2 * np.pi * 10.0 * t)
+    res_fft = A.spectrum(y, fs, method="fft")
+    res_welch = A.spectrum(y, fs, method="welch", nperseg=256)
+    assert np.diff(res_fft.freqs)[0] < np.diff(res_welch.freqs)[0]
+    dominant = res_fft.peak_freqs[np.argmax(res_fft.peak_power)]
+    assert dominant == pytest.approx(10.0, abs=0.1)
+
+
+def test_spectrum_detrend_quita_el_pico_en_continua():
+    # rng propio (no el módulo, compartido con tests posteriores que dependen
+    # de la secuencia EXACTA de sorteos, p.ej. test_adf_detecta_paseo_aleatorio):
+    # consumir del compartido aquí desplazaría sus números y los volvería frágiles.
+    rng_local = np.random.default_rng(11)
+    fs = 50.0
+    n = 2000
+    y = 5.0 + 0.3 * rng_local.standard_normal(n)   # offset grande, sin periodicidad
+    res_none = A.spectrum(y, fs, method="welch", detrend="none")
+    res_dc = A.spectrum(y, fs, method="welch", detrend="constant")
+    assert res_none.power[0] > res_dc.power[0]
+
+
+def test_spectrum_hueco_no_revienta_y_sigue_viendo_el_pico():
+    fs = 100.0
+    n = 3000
+    t = np.arange(n) / fs
+    y = np.sin(2 * np.pi * 8.0 * t)
+    y[1000:1020] = np.nan
+    res = A.spectrum(y, fs, method="welch", x=t)
+    assert res.n_nan == 20
+    dominant = res.peak_freqs[np.argmax(res.peak_power)]
+    assert dominant == pytest.approx(8.0, abs=0.5)
+
+
+def test_spectrum_avisa_muestreo_irregular():
+    rng2 = np.random.default_rng(3)
+    x_irr = np.cumsum(1.0 + rng2.uniform(-0.3, 0.3, 500))
+    y = rng2.standard_normal(500)
+    res = A.spectrum(y, 1.0, x=x_irr)
+    assert any("irregular" in note for note in res.notes)
+
+
+def test_spectrum_pocas_muestras_no_revienta():
+    res = A.spectrum(np.array([1.0, 2.0, 3.0]), 10.0)
+    assert res.freqs.size == 0
+    assert res.notes
+
+
 # --- ADF (estacionariedad) -----------------------------------------------
 def test_adf_detecta_estacionaria():
     y = rng.standard_normal(2000)   # ruido blanco: claramente estacionario

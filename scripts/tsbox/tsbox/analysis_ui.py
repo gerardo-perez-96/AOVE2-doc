@@ -150,6 +150,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.tabs.addTab(self._tab_heatmap(), "Heatmap tiempo-valor")
         self.tabs.addTab(self._tab_matrix(), "Matriz de correlación")
         self.tabs.addTab(self._tab_acf(), "ACF / PACF")
+        self.tabs.addTab(self._tab_spectrum(), "Espectro de frecuencia")
         self._ccf_tab_index = self.tabs.addTab(self._tab_ccf(), "Correlación con desfase")
         self.tabs.addTab(self._tab_granger(), "Causalidad de Granger")
 
@@ -903,6 +904,209 @@ class AnalysisWindow(QtWidgets.QDialog):
                     + " -> orden AR sugerido ≈ " + str(int(sigp[-1]) + 1))
         self.a_info.setText(txt)
 
+    # ================================================== espectro de frecuencia
+    def _tab_spectrum(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+
+        top = QtWidgets.QHBoxLayout()
+        self.sp_sid = QtWidgets.QComboBox()
+        self.sp_sid.currentIndexChanged.connect(lambda _: self.refresh_spectrum())
+        top.addWidget(QtWidgets.QLabel("Serie"))
+        top.addWidget(self.sp_sid, 1)
+
+        self.sp_method = QtWidgets.QComboBox()
+        self.sp_method.addItem("Welch (recomendado)", "welch")
+        self.sp_method.addItem("FFT directa (periodograma)", "fft")
+        self.sp_method.setToolTip(
+            "Welch promedia varios tramos solapados: menos varianza, algo "
+            "menos resolución en frecuencia. FFT directa da máxima "
+            "resolución pero cada punto tiene mucha varianza -- útil para "
+            "afinar un pico que Welch ya te ha señalado.")
+        self.sp_method.currentIndexChanged.connect(
+            lambda _: self._update_spectrum_controls())
+        top.addWidget(QtWidgets.QLabel("Método"))
+        top.addWidget(self.sp_method)
+
+        self.sp_window = QtWidgets.QComboBox()
+        for label, val in (("Hann", "hann"), ("Hamming", "hamming"),
+                          ("Blackman", "blackman"),
+                          ("Rectangular (ninguna)", "boxcar")):
+            self.sp_window.addItem(label, val)
+        self.sp_window.setToolTip(
+            "Ventana aplicada antes de transformar, para reducir el goteo "
+            "espectral (leakage): sin ventana, un tono que no cae en un "
+            "número entero de ciclos dentro de la muestra se esparce a "
+            "frecuencias vecinas y aparenta más ancho -- y más bajo -- de "
+            "lo que es.")
+        self.sp_window.currentIndexChanged.connect(lambda _: self.refresh_spectrum())
+        top.addWidget(QtWidgets.QLabel("Ventana"))
+        top.addWidget(self.sp_window)
+
+        self.sp_detrend = QtWidgets.QComboBox()
+        for label, val in (("Quitar media", "constant"),
+                          ("Quitar tendencia lineal", "linear"),
+                          ("Ninguno", "none")):
+            self.sp_detrend.addItem(label, val)
+        self.sp_detrend.setToolTip(
+            "Sin quitar al menos la media, el offset de la señal mete un "
+            "pico gigante en frecuencia 0 que satura la escala y no deja "
+            "ver nada más.")
+        self.sp_detrend.currentIndexChanged.connect(lambda _: self.refresh_spectrum())
+        top.addWidget(QtWidgets.QLabel("Detrend"))
+        top.addWidget(self.sp_detrend)
+        lay.addLayout(top)
+
+        top2 = QtWidgets.QHBoxLayout()
+        self.sp_nperseg = QtWidgets.QSpinBox()
+        self.sp_nperseg.setRange(8, 1_000_000)
+        self.sp_nperseg.setValue(256)
+        self.sp_nperseg.setToolTip(
+            "Longitud de cada tramo en Welch (muestras), con 50% de solape. "
+            "Más largo = mejor resolución en frecuencia pero menos tramos "
+            "para promediar = más varianza.")
+        self.sp_nperseg.valueChanged.connect(lambda _: self.refresh_spectrum())
+        top2.addWidget(QtWidgets.QLabel("Tramo Welch"))
+        top2.addWidget(self.sp_nperseg)
+
+        self.sp_prom = QtWidgets.QDoubleSpinBox()
+        self.sp_prom.setRange(0.01, 0.9)
+        self.sp_prom.setSingleStep(0.02)
+        self.sp_prom.setValue(0.05)
+        self.sp_prom.setToolTip(
+            "Prominencia mínima de un pico, en fracción de su PROPIA altura "
+            "(igual que en el histograma): un armónico bajito pero bien "
+            "separado de su entorno sigue contando. Súbelo si ves picos "
+            "fantasma.")
+        self.sp_prom.valueChanged.connect(lambda _: self.refresh_spectrum())
+        top2.addWidget(QtWidgets.QLabel("Prominencia pico"))
+        top2.addWidget(self.sp_prom)
+
+        self.sp_logx = QtWidgets.QCheckBox("Eje X log")
+        self.sp_logx.toggled.connect(lambda _: self.refresh_spectrum())
+        self.sp_logy = QtWidgets.QCheckBox("Eje Y log (dB)")
+        self.sp_logy.setChecked(True)
+        self.sp_logy.toggled.connect(lambda _: self.refresh_spectrum())
+        self.sp_period = QtWidgets.QCheckBox("Mostrar periodo (1/f)")
+        self.sp_period.setToolTip(
+            "Cambia el eje X de frecuencia a periodo -- útil si piensas en "
+            "'un ciclo cada X minutos/horas' en vez de en Hz.")
+        self.sp_period.toggled.connect(lambda _: self.refresh_spectrum())
+        top2.addWidget(self.sp_logx)
+        top2.addWidget(self.sp_logy)
+        top2.addWidget(self.sp_period)
+        top2.addStretch(1)
+        lay.addLayout(top2)
+
+        self.sp_layout = pg.GraphicsLayoutWidget()
+        lay.addWidget(self.sp_layout, 1)
+
+        self.sp_info = QtWidgets.QPlainTextEdit()
+        self.sp_info.setReadOnly(True)
+        self.sp_info.setMaximumHeight(160)
+        self.sp_info.setStyleSheet("font-family:monospace; font-size:11px;")
+        lay.addWidget(self.sp_info)
+
+        b_filt = QtWidgets.QPushButton(
+            "Crear filtro Butterworth desde el pico dominante…")
+        b_filt.setToolTip(
+            "Abre el diálogo de serie derivada con un paso bajo Butterworth "
+            "precargado en la frecuencia del pico más potente detectado aquí.")
+        b_filt.clicked.connect(self._spectrum_to_filter)
+        lay.addWidget(b_filt)
+        return w
+
+    def _update_spectrum_controls(self) -> None:
+        self.sp_nperseg.setEnabled(self.sp_method.currentData() == "welch")
+        self.refresh_spectrum()
+
+    def refresh_spectrum(self) -> None:
+        self.sp_layout.clear()
+        sid = self.sp_sid.currentData()
+        if sid is None:
+            self.sp_info.setPlainText("No hay series cargadas.")
+            return
+
+        from .gaps import median_step
+        step = median_step(self.session.x)
+        fs = 1.0 / step if step > 0 else 1.0
+        y = self.data(sid)
+        res = A.spectrum(y, fs, method=self.sp_method.currentData(),
+                         window=self.sp_window.currentData(),
+                         detrend=self.sp_detrend.currentData(),
+                         nperseg=self.sp_nperseg.value(),
+                         prominence=self.sp_prom.value(), x=self.session.x)
+        self._spectrum = res
+        if res.freqs.size == 0:
+            self.sp_info.setPlainText(
+                "\n".join([f"{self.name(sid)}: sin espectro."] + res.notes))
+            return
+
+        period = self.sp_period.isChecked()
+        with np.errstate(divide="ignore"):
+            xv = np.where(res.freqs > 0, 1.0 / np.where(res.freqs > 0,
+                          res.freqs, np.nan), np.nan) if period else res.freqs
+        logy = self.sp_logy.isChecked()
+        yv = 10 * np.log10(np.maximum(res.power, 1e-300)) if logy else res.power
+
+        pl = self.sp_layout.addPlot(row=0, col=0, title=self.name(sid))
+        pl.showGrid(x=True, y=True, alpha=0.2)
+        pl.setLabel("bottom", "periodo" if period else "frecuencia",
+                    units="" if period else "Hz")
+        pl.setLabel("left", "potencia (dB)" if logy else "potencia")
+        if self.sp_logx.isChecked() and not period:
+            pl.setLogMode(x=True)
+        # El periodo decrece según la frecuencia crece: sin esto, "baja
+        # frecuencia" quedaría a la derecha del eje en vez de a la
+        # izquierda, al revés de como se lee el eje de frecuencia normal.
+        pl.invertX(period)
+        mask = np.isfinite(xv) & np.isfinite(yv)
+        pl.plot(xv[mask], yv[mask], pen=pg.mkPen(self.color(sid), width=1.5))
+        for pf in res.peak_freqs:
+            px = (1.0 / pf) if (period and pf > 0) else pf
+            pl.addItem(pg.InfiniteLine(px, angle=90, pen=pg.mkPen(
+                "#FFD54F", width=1, style=Qt.DashLine)))
+
+        lines = [f"{self.name(sid)}   n={res.n}  faltan={res.n_nan}   "
+                f"fs≈{res.fs:.6g}   Nyquist≈{res.fs/2:.6g}   "
+                f"método={res.method}   ventana={res.window}"]
+        if res.peak_freqs.size:
+            lines.append("Picos (frecuencia, periodo, potencia), por potencia:")
+            for pf, pp, per in zip(res.peak_freqs, res.peak_power, res.peak_periods):
+                lines.append(f"  f={pf:.6g}   T={per:.6g}   P={pp:.4g}")
+        else:
+            lines.append("Sin picos por encima del umbral de prominencia.")
+        if res.notes:
+            lines.append("")
+            lines.extend(res.notes)
+        self.sp_info.setPlainText("\n".join(lines))
+        self.note.setText("  ".join(res.notes))
+
+    def _spectrum_to_filter(self) -> None:
+        """Precarga el diálogo de serie derivada con un Butterworth paso bajo
+        en la frecuencia del pico más potente detectado en el espectro --
+        conecta "he visto una frecuencia rara" con "quiero quitarla" sin
+        tener que leer el número y teclearlo a mano en el otro diálogo."""
+        res = getattr(self, "_spectrum", None)
+        sid = self.sp_sid.currentData()
+        if res is None or sid is None or res.peak_freqs.size == 0:
+            QtWidgets.QMessageBox.information(
+                self, "Filtro Butterworth",
+                "Calcula el espectro y deja que detecte al menos un pico "
+                "antes de crear el filtro (o baja la prominencia mínima).")
+            return
+        from .dialogs import DerivedDialog
+        from .model import KIND_BUTTER
+        cutoff = float(res.peak_freqs[int(np.argmax(res.peak_power))])
+        dlg = DerivedDialog(self.session, sid, self, kind=KIND_BUTTER, cutoff=cutoff)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        parent, kind, params, overlay = dlg.result_params()
+        self.session.add_derived(parent, kind, params, overlay)
+        self.main.rebuild_panels()
+        self.main.refresh_list()
+        self.refresh()
+
     # ================================================== CCF
     def _tab_ccf(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
@@ -1329,6 +1533,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.m_pick.populate(self.session)
         self._sid_combo(self.hm_sid)
         self._sid_combo(self.a_sid)
+        self._sid_combo(self.sp_sid)
         self._sid_combo(self.c_x)
         self._sid_combo(self.c_y)
         self._sid_combo(self.g_x)
@@ -1336,8 +1541,8 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.note.setText("")
         i = self.tabs.currentIndex()
         (self.refresh_hist, self.refresh_box, self.refresh_heatmap,
-         self.refresh_matrix, self.refresh_acf, self.refresh_ccf,
-         self.refresh_granger)[i]()
+         self.refresh_matrix, self.refresh_acf, self.refresh_spectrum,
+         self.refresh_ccf, self.refresh_granger)[i]()
 
 
 # ---------------------------------------------------------------- helpers

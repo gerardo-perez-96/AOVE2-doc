@@ -312,6 +312,140 @@ def histogram(y: np.ndarray, bins: int | str = "auto",
 
 
 # ----------------------------------------------------------------------
+# espectro de frecuencia (Welch / FFT)
+# ----------------------------------------------------------------------
+@dataclass
+class SpectrumResult:
+    freqs: np.ndarray
+    power: np.ndarray
+    fs: float
+    n: int
+    n_nan: int
+    method: str
+    window: str
+    detrend: str
+    peak_freqs: np.ndarray
+    peak_power: np.ndarray
+    peak_periods: np.ndarray
+    notes: list[str] = field(default_factory=list)
+
+
+def _irregular_fraction(x: np.ndarray) -> float:
+    """Fracción de pasos que se apartan >5% del paso mediano. La FFT/Welch
+    asumen muestreo uniforme; si el eje X no lo es, el eje de frecuencia
+    resultante es aproximado, no exacto."""
+    x = np.asarray(x, dtype=np.float64)
+    if x.size < 3:
+        return 0.0
+    d = np.diff(x)
+    d = d[np.isfinite(d) & (d > 0)]
+    if d.size == 0:
+        return 0.0
+    step = np.median(d)
+    if step <= 0:
+        return 0.0
+    return float(np.mean(np.abs(d - step) > 0.05 * step))
+
+
+def _spectrum_peaks(f: np.ndarray, p: np.ndarray, prominence: float,
+                    max_peaks: int = 12
+                    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Picos de potencia con el mismo criterio que _find_modes: prominencia
+    relativa a la PROPIA altura del pico, no al máximo global. Un armónico
+    mucho más bajo que la fundamental sigue contando si está bien separado
+    de su entorno -- justo lo que un umbral relativo al máximo escondería.
+    """
+    if p.size < 3 or p.max() <= 0:
+        return np.empty(0), np.empty(0), np.empty(0)
+    pk, props = signal.find_peaks(p, prominence=0.0)
+    if pk.size == 0:
+        return np.empty(0), np.empty(0), np.empty(0)
+    prom = props["prominences"]
+    keep = prom >= prominence * p[pk]
+    if not keep.any():
+        keep[int(np.argmax(p[pk]))] = True
+    idx = pk[keep]
+    order = np.argsort(-p[idx])[:max_peaks]
+    idx = idx[order]
+    freqs = f[idx]
+    periods = np.where(freqs > 0, 1.0 / np.where(freqs > 0, freqs, 1.0), np.inf)
+    return freqs, p[idx], periods
+
+
+def spectrum(y: np.ndarray, fs: float, method: str = "welch",
+            window: str = "hann", detrend: str = "constant",
+            nperseg: int | None = None, prominence: float = 0.05,
+            x: np.ndarray | None = None) -> SpectrumResult:
+    """Densidad espectral de potencia (Welch) o periodograma FFT directo.
+
+    method:
+      "welch" (recomendado) -- promedia varios tramos solapados (Welch,
+        1967): menos varianza en la estimación a cambio de peor resolución
+        en frecuencia. Es lo que hay que mirar para "¿qué frecuencias tiene
+        esta señal de verdad", sobre todo si es ruidosa -- un periodograma
+        crudo en una señal ruidosa es básicamente ruido él mismo, con un
+        pico "significativo" en cualquier sitio por puro azar.
+      "fft"   -- |FFT|²/n sobre toda la ventana de una vez. Máxima
+        resolución en frecuencia, pero cada punto es una estimación de
+        varianza altísima. Útil para afinar un pico exacto una vez Welch
+        te ha dicho dónde mirar.
+
+    `detrend` quita la componente continua ("constant", la media) o la
+    tendencia lineal ("linear") antes de transformar. Sin quitar al menos
+    la media, el offset de la señal mete un pico gigante en frecuencia 0
+    que satura la escala y no deja ver nada más -- el mismo problema que
+    resuelve mask_excluded/demean en la ACF.
+
+    `window` aplica una ventana (Hann por defecto) antes de transformar
+    para reducir el goteo espectral (leakage): sin ventana, un tono que no
+    encaja en un número entero de ciclos dentro de la muestra se esparce a
+    frecuencias vecinas y aparenta ser más ancho -- y más bajo -- de lo
+    que es en realidad.
+
+    `x`, si se pasa, solo se usa para avisar de muestreo irregular (no
+    para el cálculo en sí, que asume paso constante = 1/fs).
+    """
+    y = clean(y)
+    n_nan = int((~np.isfinite(y)).sum())
+    yv = fill_gaps(y)   # interpola huecos interiores, recorta extremos sin dato
+
+    notes: list[str] = []
+    if x is not None:
+        irregular = _irregular_fraction(x)
+        if irregular > 0.05:
+            notes.append(
+                f"Muestreo irregular ({irregular:.0%} de los pasos se apartan "
+                ">5% de la mediana): el eje de frecuencia asume paso "
+                "constante y aquí es aproximado.")
+
+    if yv.size < 8 or fs <= 0:
+        return SpectrumResult(np.empty(0), np.empty(0), fs, int(yv.size), n_nan,
+                              method, window, detrend, np.empty(0), np.empty(0),
+                              np.empty(0), notes + ["Muy pocas muestras válidas."])
+
+    dt = False if detrend == "none" else detrend
+
+    if method == "fft":
+        yv2 = signal.detrend(yv, type=dt) if dt else yv
+        win = signal.get_window(window, yv2.size)
+        yv2 = yv2 * win
+        scale = 1.0 / (fs * np.sum(win ** 2))
+        f = np.fft.rfftfreq(yv2.size, d=1.0 / fs)
+        p = (np.abs(np.fft.rfft(yv2)) ** 2) * scale
+        if p.size > 2:
+            p[1:-1] *= 2.0   # espectro de un solo lado: dobla salvo DC/Nyquist
+    else:
+        nseg = int(nperseg) if nperseg else min(256, yv.size)
+        nseg = int(np.clip(nseg, min(8, yv.size), yv.size))
+        f, p = signal.welch(yv, fs=fs, window=window, detrend=dt,
+                            nperseg=nseg, noverlap=nseg // 2)
+
+    pk_f, pk_p, pk_per = _spectrum_peaks(f, p, prominence)
+    return SpectrumResult(f, p, float(fs), int(yv.size), n_nan, method, window,
+                          detrend, pk_f, pk_p, pk_per, notes)
+
+
+# ----------------------------------------------------------------------
 # heatmap tiempo x valor (cambios de régimen)
 # ----------------------------------------------------------------------
 @dataclass

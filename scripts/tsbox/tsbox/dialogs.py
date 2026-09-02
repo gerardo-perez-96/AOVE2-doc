@@ -7,8 +7,10 @@ from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 
 from . import loader, longformat
-from .model import (KIND_DERIVATIVE, KIND_ROLLING_MEAN, KIND_ROLLING_STD,
-                    Project, SeriesDef)
+from .gaps import median_step
+from .model import (KIND_BUTTER, KIND_DERIVATIVE, KIND_ROLLING_MEAN,
+                    KIND_ROLLING_STD)
+from .session import Session
 
 
 class LoadDialog(QtWidgets.QDialog):
@@ -347,20 +349,28 @@ class AddColumnsDialog(QtWidgets.QDialog):
 
 
 class DerivedDialog(QtWidgets.QDialog):
-    """Filtro de media móvil, desviación móvil o derivada."""
+    """Media móvil, desviación móvil, derivada, o filtro Butterworth."""
 
     KINDS = [("Media móvil", KIND_ROLLING_MEAN),
              ("Desviación típica móvil", KIND_ROLLING_STD),
-             ("Derivada d/dx", KIND_DERIVATIVE)]
+             ("Derivada d/dx", KIND_DERIVATIVE),
+             ("Filtro Butterworth", KIND_BUTTER)]
 
-    def __init__(self, project: Project, default_sid: str | None = None, parent=None):
+    BTYPES = [("Paso bajo (quita lo rápido)", "low"),
+              ("Paso alto (quita lo lento / la tendencia)", "high"),
+              ("Paso banda (se queda con un rango)", "bandpass"),
+              ("Rechazo banda (quita un rango)", "bandstop")]
+
+    def __init__(self, session: Session, default_sid: str | None = None, parent=None,
+                kind: str | None = None, cutoff: float | None = None):
         super().__init__(parent)
         self.setWindowTitle("Nueva serie derivada")
-        self.project = project
+        self.session = session
+        self.project = session.project
         lay = QtWidgets.QFormLayout(self)
 
         self.cmb_parent = QtWidgets.QComboBox()
-        for s in project.ordered():
+        for s in self.project.ordered():
             self.cmb_parent.addItem(s.name, s.sid)
         if default_sid:
             i = self.cmb_parent.findData(default_sid)
@@ -369,8 +379,8 @@ class DerivedDialog(QtWidgets.QDialog):
         lay.addRow("Sobre la serie", self.cmb_parent)
 
         self.cmb_kind = QtWidgets.QComboBox()
-        for label, kind in self.KINDS:
-            self.cmb_kind.addItem(label, kind)
+        for label, k in self.KINDS:
+            self.cmb_kind.addItem(label, k)
         lay.addRow("Operación", self.cmb_kind)
 
         self.spin_win = QtWidgets.QSpinBox()
@@ -382,6 +392,57 @@ class DerivedDialog(QtWidgets.QDialog):
         self.chk_center.setChecked(True)
         lay.addRow("", self.chk_center)
 
+        # --- filtro Butterworth ------------------------------------------
+        step = median_step(session.x) if getattr(session, "x", None) is not None \
+            and len(session.x) > 1 else 1.0
+        self._nyquist = 0.5 / step if step > 0 else 0.5
+
+        self.cmb_btype = QtWidgets.QComboBox()
+        for label, val in self.BTYPES:
+            self.cmb_btype.addItem(label, val)
+        lay.addRow("Tipo de filtro", self.cmb_btype)
+
+        self.spin_order = QtWidgets.QSpinBox()
+        self.spin_order.setRange(1, 10)
+        self.spin_order.setValue(4)
+        self.spin_order.setToolTip(
+            "Más orden = transición más abrupta entre lo que pasa y lo que "
+            "se corta, a cambio de más retardo de grupo y más riesgo de "
+            "inestabilidad numérica con cortes muy extremos.")
+        lay.addRow("Orden", self.spin_order)
+
+        cut_max = max(1e-6, self._nyquist * 0.999)
+        default_cut1 = min(cutoff, cut_max) if cutoff else self._nyquist * 0.1
+        self.spin_cut1 = QtWidgets.QDoubleSpinBox()
+        self.spin_cut1.setDecimals(6)
+        self.spin_cut1.setRange(1e-6, cut_max)
+        self.spin_cut1.setValue(max(1e-6, default_cut1))
+        self.lbl_cut1 = QtWidgets.QLabel("Corte")
+        lay.addRow(self.lbl_cut1, self.spin_cut1)
+
+        self.spin_cut2 = QtWidgets.QDoubleSpinBox()
+        self.spin_cut2.setDecimals(6)
+        self.spin_cut2.setRange(1e-6, cut_max)
+        self.spin_cut2.setValue(max(1e-6, self._nyquist * 0.3))
+        self.lbl_cut2 = QtWidgets.QLabel("Corte superior")
+        lay.addRow(self.lbl_cut2, self.spin_cut2)
+
+        self.chk_zero_phase = QtWidgets.QCheckBox(
+            "Fase cero (filtfilt, sin retardo)")
+        self.chk_zero_phase.setChecked(True)
+        self.chk_zero_phase.setToolTip(
+            "Filtra adelante y atrás: no desplaza la señal en el tiempo, "
+            "pero 've' un poco hacia delante -- vale para análisis a "
+            "posteriori, no para tiempo real. Desactívalo para un filtro "
+            "causal, con el retardo de fase típico de un IIR.")
+        lay.addRow("", self.chk_zero_phase)
+
+        self.lbl_nyquist = QtWidgets.QLabel(
+            f"Nyquist ≈ {self._nyquist:.6g}   (fs ≈ {2 * self._nyquist:.6g}, "
+            "estimada del paso mediano del eje X)")
+        self.lbl_nyquist.setStyleSheet("color:#888")
+        lay.addRow(self.lbl_nyquist)
+
         self.chk_overlay = QtWidgets.QCheckBox(
             "Superponer sobre la original (eje Y derecho)")
         self.chk_overlay.setChecked(True)
@@ -392,6 +453,12 @@ class DerivedDialog(QtWidgets.QDialog):
         self.hint.setStyleSheet("color:#888")
         lay.addRow(self.hint)
         self.cmb_kind.currentIndexChanged.connect(self._update_hint)
+        self.cmb_btype.currentIndexChanged.connect(self._update_hint)
+
+        if kind:
+            i = self.cmb_kind.findData(kind)
+            if i >= 0:
+                self.cmb_kind.setCurrentIndex(i)
         self._update_hint()
 
         bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok |
@@ -402,13 +469,30 @@ class DerivedDialog(QtWidgets.QDialog):
 
     def _update_hint(self) -> None:
         kind = self.cmb_kind.currentData()
-        needs_window = kind != KIND_DERIVATIVE
+        is_butter = kind == KIND_BUTTER
+        needs_window = kind not in (KIND_DERIVATIVE, KIND_BUTTER)
         self.spin_win.setEnabled(needs_window)
         self.chk_center.setEnabled(needs_window)
+
+        for w in (self.cmb_btype, self.spin_order, self.spin_cut1,
+                 self.lbl_cut1, self.chk_zero_phase, self.lbl_nyquist):
+            w.setEnabled(is_butter)
+        band = is_butter and self.cmb_btype.currentData() in ("bandpass", "bandstop")
+        self.spin_cut2.setEnabled(band)
+        self.lbl_cut2.setEnabled(band)
+        self.lbl_cut1.setText("Banda: corte inferior" if band else "Corte")
+
         if kind == KIND_DERIVATIVE:
             self.hint.setText(
                 "La derivada amplifica el ruido. Si la señal es ruidosa, "
                 "filtra primero con una media móvil y deriva sobre ese resultado.")
+        elif is_butter:
+            self.hint.setText(
+                "El corte se mide en 1/unidad-de-X (Hz si el eje X es tiempo "
+                "en segundos) -- tiene que quedar por debajo de Nyquist. Los "
+                "huecos se interpolan antes de filtrar y se restauran a NaN "
+                "después: un IIR tiene memoria infinita y un solo NaN "
+                "contaminaría toda la señal filtrada si no se hiciera así.")
         else:
             self.hint.setText(
                 "La ventana se mide en muestras, no en segundos. Con muestreo "
@@ -417,7 +501,14 @@ class DerivedDialog(QtWidgets.QDialog):
     def result_params(self) -> tuple[str, str, dict, bool]:
         kind = self.cmb_kind.currentData()
         params: dict = {}
-        if kind != KIND_DERIVATIVE:
+        if kind == KIND_BUTTER:
+            btype = self.cmb_btype.currentData()
+            params = {"btype": btype, "order": self.spin_order.value(),
+                      "cutoff": self.spin_cut1.value(),
+                      "zero_phase": self.chk_zero_phase.isChecked()}
+            if btype in ("bandpass", "bandstop"):
+                params["cutoff2"] = self.spin_cut2.value()
+        elif kind != KIND_DERIVATIVE:
             params = {"window": self.spin_win.value(),
                       "center": self.chk_center.isChecked()}
         return (self.cmb_parent.currentData(), kind, params,

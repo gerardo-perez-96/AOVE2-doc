@@ -788,7 +788,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def add_derived(self) -> None:
         if not self.session.project.series:
             return
-        dlg = DerivedDialog(self.session.project, self._active_sid, self)
+        dlg = DerivedDialog(self.session, self._active_sid, self)
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
         parent, kind, params, overlay = dlg.result_params()

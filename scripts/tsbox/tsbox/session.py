@@ -255,6 +255,18 @@ class Session:
         name = f"{parent.name} · {kind}"
         if "window" in params:
             name += f"({params['window']})"
+        elif "cutoff" in params:
+            # Sin esto, dos Butterworth sobre la misma serie (p.ej. un paso
+            # bajo y un paso alto para comparar) saldrían con el MISMO
+            # nombre en los selectores de la ventana de Análisis (que listan
+            # `.name`, no `.describe()`) -- indistinguibles hasta que los
+            # marcas y miras cuál es cuál.
+            freq = params["cutoff"]
+            if params.get("btype") in ("bandpass", "bandstop") and "cutoff2" in params:
+                freq = f"{freq:g}-{params['cutoff2']:g}"
+            else:
+                freq = f"{freq:g}"
+            name += f"({params.get('btype', '?')}@{freq})"
         s = SeriesDef(sid=new_id("s"), name=name, kind=kind, parent=parent_sid,
                       params=dict(params), overlay_on_parent=overlay)
         self.project.add_series(s)

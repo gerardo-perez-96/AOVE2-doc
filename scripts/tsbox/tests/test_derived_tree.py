@@ -128,6 +128,20 @@ def test_eliminar_original_elimina_sus_derivadas_y_paneles(win):
     assert win.session.project.by_id(d.sid) is None
 
 
+def test_filtro_butterworth_tiene_panel_propio_y_se_describe(win):
+    sid = win.session.project.by_name("a").sid
+    d = win.session.add_derived(sid, "butterworth",
+                                {"btype": "low", "order": 4, "cutoff": 0.003,
+                                 "zero_phase": True})
+    win.rebuild_panels()
+    win.refresh_list()
+    assert d.sid in win.panels
+    assert win.panels[d.sid] is not win.panels[sid]
+    assert np.isfinite(win.session.values(d.sid)).any()
+    desc = win.session.project.by_id(d.sid).describe()
+    assert "Butterworth" in desc and "paso bajo" in desc and "fase cero" in desc
+
+
 def test_series_sin_hijos_es_hoja_sin_flecha(win):
     b = win.session.project.by_name("b")
     root = win._tree_items[b.sid]

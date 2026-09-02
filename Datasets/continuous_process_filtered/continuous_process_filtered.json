@@ -2,10 +2,10 @@
   "app": "tsbox",
   "schema_version": 1,
   "source": {
-    "path": "C:\\Users\\COMPUTAEX\\Documents\\Gerardo\\AOVE2\\Datasets\\continuous_process_filtered\\continuous_process_filtered.csv",
-    "quick_hash": "f680c529db44d2a9312b8c1267c56556",
-    "size": 3791543,
-    "mtime": 1788157428.693705,
+    "path": "/home/gerardo/Documents/AOVE2-doc/Datasets/continuous_process_filtered/continuous_process_filtered.csv",
+    "quick_hash": "b325a200f9e5fdddd447edda6aecdc80",
+    "size": 3777454,
+    "mtime": 1788273050.0332196,
     "x_mode": "column",
     "x_column": "time_stamp",
     "x_is_datetime": true,
@@ -51,7 +51,7 @@
       "column": "Machine1.RawMaterial.Property1",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#7ED321",
       "order": 2,
       "overlay_on_parent": false,
@@ -65,7 +65,7 @@
       "column": "Machine1.RawMaterial.Property2",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#D0021B",
       "order": 3,
       "overlay_on_parent": false,
@@ -79,7 +79,7 @@
       "column": "Machine1.RawMaterial.Property3",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#BD10E0",
       "order": 4,
       "overlay_on_parent": false,
@@ -93,7 +93,7 @@
       "column": "Machine1.RawMaterial.Property4",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#50E3C2",
       "order": 5,
       "overlay_on_parent": false,
@@ -107,7 +107,7 @@
       "column": "Machine1.RawMaterialFeederParameter.U.Actual",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#B8E986",
       "order": 7,
       "overlay_on_parent": false,
@@ -121,9 +121,9 @@
       "column": "Machine1.Zone1Temperature.C.Actual",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#9013FE",
-      "order": 9,
+      "order": 10,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -135,9 +135,9 @@
       "column": "Machine1.Zone2Temperature.C.Actual",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#F8E71C",
-      "order": 11,
+      "order": 12,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -149,9 +149,9 @@
       "column": "Machine1.MotorAmperage.U.Actual",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#FF6F61",
-      "order": 14,
+      "order": 15,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -163,7 +163,7 @@
       "column": "Machine1.MotorRPM.C.Actual",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#4C9AFF",
       "order": 6,
       "overlay_on_parent": false,
@@ -177,9 +177,9 @@
       "column": "Machine1.MaterialPressure.U.Actual",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#F5A623",
-      "order": 16,
+      "order": 17,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -191,9 +191,9 @@
       "column": "Machine1.MaterialTemperature.U.Actual",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#7ED321",
-      "order": 18,
+      "order": 19,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -205,9 +205,9 @@
       "column": "Machine1.ExitZoneTemperature.C.Actual",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#D0021B",
-      "order": 12,
+      "order": 13,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -221,7 +221,7 @@
       "params": {},
       "visible": false,
       "color": "#BD10E0",
-      "order": 19,
+      "order": 20,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -235,7 +235,7 @@
       "params": {},
       "visible": false,
       "color": "#50E3C2",
-      "order": 20,
+      "order": 21,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -249,7 +249,7 @@
       "params": {},
       "visible": false,
       "color": "#B8E986",
-      "order": 21,
+      "order": 22,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -263,7 +263,7 @@
       "params": {},
       "visible": false,
       "color": "#9013FE",
-      "order": 22,
+      "order": 23,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -277,7 +277,7 @@
       "params": {},
       "visible": false,
       "color": "#F8E71C",
-      "order": 23,
+      "order": 24,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -291,7 +291,7 @@
       "params": {},
       "visible": false,
       "color": "#FF6F61",
-      "order": 25,
+      "order": 26,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -305,7 +305,7 @@
       "params": {},
       "visible": false,
       "color": "#4C9AFF",
-      "order": 26,
+      "order": 27,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -319,7 +319,7 @@
       "params": {},
       "visible": false,
       "color": "#F5A623",
-      "order": 27,
+      "order": 28,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -333,7 +333,7 @@
       "params": {},
       "visible": false,
       "color": "#7ED321",
-      "order": 29,
+      "order": 30,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -347,7 +347,7 @@
       "params": {},
       "visible": false,
       "color": "#D0021B",
-      "order": 33,
+      "order": 34,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -361,7 +361,7 @@
       "params": {},
       "visible": false,
       "color": "#BD10E0",
-      "order": 36,
+      "order": 37,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -375,7 +375,7 @@
       "params": {},
       "visible": false,
       "color": "#50E3C2",
-      "order": 30,
+      "order": 31,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -387,9 +387,9 @@
       "column": "Machine3.RawMaterial.Property1",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#B8E986",
-      "order": 37,
+      "order": 38,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -401,9 +401,9 @@
       "column": "Machine3.RawMaterial.Property2",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#9013FE",
-      "order": 38,
+      "order": 39,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -415,9 +415,9 @@
       "column": "Machine3.RawMaterial.Property3",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#F8E71C",
-      "order": 39,
+      "order": 40,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -429,9 +429,9 @@
       "column": "Machine3.RawMaterial.Property4",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#FF6F61",
-      "order": 40,
+      "order": 41,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -443,9 +443,9 @@
       "column": "Machine3.RawMaterialFeederParameter.U.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#4C9AFF",
-      "order": 41,
+      "order": 42,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -457,9 +457,9 @@
       "column": "Machine3.Zone1Temperature.C.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#F5A623",
-      "order": 43,
+      "order": 45,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -471,9 +471,9 @@
       "column": "Machine3.Zone2Temperature.C.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#7ED321",
-      "order": 44,
+      "order": 46,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -485,9 +485,9 @@
       "column": "Machine3.MotorAmperage.U.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#D0021B",
-      "order": 46,
+      "order": 48,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -499,9 +499,9 @@
       "column": "Machine3.MotorRPM.C.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#BD10E0",
-      "order": 48,
+      "order": 50,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -513,9 +513,9 @@
       "column": "Machine3.MaterialPressure.U.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#50E3C2",
-      "order": 50,
+      "order": 52,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -527,9 +527,9 @@
       "column": "Machine3.MaterialTemperature.U.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#B8E986",
-      "order": 52,
+      "order": 54,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -541,9 +541,9 @@
       "column": "Machine3.ExitZoneTemperature.C.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#9013FE",
-      "order": 53,
+      "order": 55,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -555,9 +555,9 @@
       "column": "FirstStage.CombinerOperation.Temperature1.U.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#F8E71C",
-      "order": 54,
+      "order": 56,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -569,9 +569,9 @@
       "column": "FirstStage.CombinerOperation.Temperature2.U.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#FF6F61",
-      "order": 55,
+      "order": 57,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -583,9 +583,9 @@
       "column": "FirstStage.CombinerOperation.Temperature3.C.Actual",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#4C9AFF",
-      "order": 56,
+      "order": 58,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -599,7 +599,7 @@
       "params": {},
       "visible": false,
       "color": "#F5A623",
-      "order": 57,
+      "order": 59,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -614,9 +614,9 @@
         "window": 10,
         "center": true
       },
-      "visible": false,
+      "visible": true,
       "color": "#D0021B",
-      "order": 13,
+      "order": 14,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -633,7 +633,7 @@
       },
       "visible": false,
       "color": "#D0021B",
-      "order": 24,
+      "order": 25,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -667,7 +667,7 @@
       },
       "visible": false,
       "color": "#9013FE",
-      "order": 10,
+      "order": 11,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -684,7 +684,7 @@
       },
       "visible": false,
       "color": "#F8E71C",
-      "order": 15,
+      "order": 16,
       "overlay_on_parent": true,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -701,7 +701,7 @@
       },
       "visible": false,
       "color": "#9013FE",
-      "order": 17,
+      "order": 18,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -718,7 +718,7 @@
       },
       "visible": false,
       "color": "#F8E71C",
-      "order": 28,
+      "order": 29,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -735,7 +735,7 @@
       },
       "visible": false,
       "color": "#FF6F61",
-      "order": 32,
+      "order": 33,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -752,7 +752,7 @@
       },
       "visible": false,
       "color": "#4C9AFF",
-      "order": 35,
+      "order": 36,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -769,7 +769,7 @@
       },
       "visible": false,
       "color": "#F5A623",
-      "order": 34,
+      "order": 35,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -786,7 +786,7 @@
       },
       "visible": false,
       "color": "#7ED321",
-      "order": 31,
+      "order": 32,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -803,7 +803,7 @@
       },
       "visible": false,
       "color": "#D0021B",
-      "order": 42,
+      "order": 43,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -820,7 +820,7 @@
       },
       "visible": false,
       "color": "#BD10E0",
-      "order": 45,
+      "order": 47,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -835,9 +835,9 @@
         "window": 60,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#50E3C2",
-      "order": 47,
+      "order": 49,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -854,7 +854,7 @@
       },
       "visible": false,
       "color": "#B8E986",
-      "order": 49,
+      "order": 51,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -866,9 +866,47 @@
       "column": null,
       "parent": "s_67a8653a",
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#9013FE",
-      "order": 51,
+      "order": 53,
+      "overlay_on_parent": false,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_4ad114c0",
+      "name": "Machine3.RawMaterialFeederParameter.U.Actual · butterworth(low@0.0033)",
+      "kind": "butterworth",
+      "column": null,
+      "parent": "s_efff62ab",
+      "params": {
+        "btype": "low",
+        "order": 4,
+        "cutoff": 0.0033,
+        "zero_phase": true
+      },
+      "visible": false,
+      "color": "#F8E71C",
+      "order": 44,
+      "overlay_on_parent": false,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_04893d05",
+      "name": "Machine1.RawMaterialFeederParameter.U.Actual · butterworth(low@0.0033)",
+      "kind": "butterworth",
+      "column": null,
+      "parent": "s_6eec2da3",
+      "params": {
+        "btype": "low",
+        "order": 4,
+        "cutoff": 0.0033,
+        "zero_phase": true
+      },
+      "visible": true,
+      "color": "#FF6F61",
+      "order": 9,
       "overlay_on_parent": false,
       "show_stats_lines": false,
       "hidden_reason": ""
@@ -1015,6 +1053,7 @@
       "exclude_from_stats": false
     }
   ],
+  "global_marks": [],
   "notes": [
     {
       "nid": "n_799794fd",
@@ -1191,8 +1230,8 @@
   ],
   "view": {
     "xrange": [
-      1551873228.5555735,
-      1551884978.9231234
+      1551868689.2761765,
+      1551884503.7238235
     ]
   }
 }
