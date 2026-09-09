@@ -132,3 +132,48 @@ def test_reapertura_conserva_todo(qapp, csv):
     assert any(s.params.get("window") == 9 for s in w2.session.project.series)
     assert not w2.session.warnings
     w2.close()
+
+
+def test_crear_derivada_no_recalcula_las_demas_sin_cachear(qapp, csv):
+    """Bug real: add_derived() llamaba rebuild_panels(), que destruye y
+    recrea TODOS los paneles -- cualquier derivada del proyecto sin
+    cachear se recalculaba de forma síncrona en el hilo de UI, sentido
+    como bloqueo/"no responde" al crear una nueva. add_derived() debe usar
+    _add_panel(), que solo construye el panel de la serie nueva."""
+    w = MainWindow()
+    w.session.open(csv, "column", "ts")
+    w.rebuild_panels()
+    sid = w.session.project.by_name("a").sid
+
+    # varias derivadas ya en el proyecto, simulando que nunca se dibujaron
+    # (p.ej. tras cargar un JSON de proyecto con series que no están en pantalla)
+    for _ in range(4):
+        w.session.add_derived(sid, KIND_ROLLING_MEAN, {"window": 15}, overlay=False)
+    w.session._cache.clear()
+    assert not w.session._cache
+
+    recalculated = []
+    orig_values = w.session.values
+
+    def spy(sid_):
+        recalculated.append(sid_)
+        return orig_values(sid_)
+    w.session.values = spy
+
+    s = w.session.add_derived(sid, KIND_DERIVATIVE, {}, overlay=False)
+    w.session.mark_pending(s.sid)
+    w._add_panel(s.sid)
+
+    # el panel nuevo nace "calculando", sin haber pedido session.values()
+    # de ninguna otra serie del proyecto que no fuera necesaria para esto
+    assert s.sid in w.panels
+    assert w.panels[s.sid].missing_lbl.text() == "⏳ calculando…"
+    other_sids = {ser.sid for ser in w.session.project.series if ser.sid != s.sid}
+    assert not (set(recalculated) & other_sids), (
+        "add_derived()/_add_panel() recalculó otras series -- "
+        "eso es el bloqueo que se supone que este cambio evita")
+
+    # cerrar con cambios pendientes abre un modal: en headless eso cuelga
+    # (ver test_flujo_completo) -- se guarda antes para evitarlo.
+    w.save(manual=True)
+    w.close()

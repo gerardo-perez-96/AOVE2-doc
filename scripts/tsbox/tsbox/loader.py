@@ -53,15 +53,62 @@ def sniff_sep(path: Path) -> str:
         return max(",;\t|", key=first.count) if first else ","
 
 
+def sniff_decimal(path: Path, sep: str) -> str:
+    """Detecta si los decimales van con coma (locale ES/PT/BR/DE...) en vez
+    de punto, leyendo solo la cabecera + unas filas.
+
+    Un CSV así con sep=',' es AMBIGUO carácter a carácter -- "55,2" es un
+    campo con decimal si va entrecomillado, o dos campos si no. Por eso la
+    señal más fiable es indirecta: se cuentan los valores con forma
+    "dígitos,dígitos" (entrecomillados o no) frente a "dígitos.dígitos" en
+    las primeras filas. Si hay overwhelming mayoría de coma y prácticamente
+    ningún punto, es decimal con coma -- sin esto, pandas lee esas columnas
+    como texto y no hay ninguna serie que dibujar aunque el fichero esté
+    perfectamente sano.
+    """
+    import re
+    try:
+        with open(path, "r", newline="", errors="replace") as f:
+            sample = f.read(256 * 1024)
+    except Exception:
+        return "."
+    if not sample:
+        return "."
+    lines = sample.splitlines()[1:401]     # cabecera fuera, hasta 400 filas
+    body = "\n".join(lines)
+
+    # Señal fuerte: "dígitos,dígitos" ENTRECOMILLADO. Sin comillas, "1,2" es
+    # indistinguible de dos campos enteros separados por el propio delimitador
+    # -- con comillas ya no hay ambigüedad posible, el fichero está diciendo
+    # explícitamente "esto es un solo valor". Es justo el caso real (locale
+    # ES/PT/BR/DE exportado a CSV con sep=',': los decimales se entrecomillan
+    # para poder convivir con la coma como separador de campo).
+    quoted_comma = len(re.findall(r'"\d+,\d+"', body))
+    quoted_dot = len(re.findall(r'"\d+\.\d+"', body))
+    if quoted_comma >= 3 and quoted_comma > quoted_dot * 3:
+        return ","
+
+    # Sin comillas, la señal es más débil (ambigua con "dos enteros
+    # consecutivos"), así que se exige mayoría muy clara y ningún punto
+    # decimal en absoluto -- un solo ".NNN" ya sugiere que el fichero usa
+    # punto y las comas son de verdad el separador de campo.
+    comma_dec = len(re.findall(r'(?<![\d,.\"])\d+,\d+(?![\d,\"])', body))
+    dot_dec = len(re.findall(r'(?<![\d,.\"])\d+\.\d+(?![\d.\"])', body))
+    if comma_dec >= 10 and dot_dec == 0 and sep != ",":
+        return ","
+    return "."
+
+
 # ----------------------------------------------------------------------
 # inspeccion barata
 # ----------------------------------------------------------------------
-def peek_columns(path: str | Path, n: int = 500) -> pd.DataFrame:
+def peek_columns(path: str | Path, n: int = 500,
+                 decimal: str = ".") -> pd.DataFrame:
     """Muestra para el dialogo de carga. Nunca toca el fichero entero."""
     p = Path(path)
     ext = p.suffix.lower()
     if ext in CSV_EXT:
-        return pd.read_csv(p, nrows=n, sep=sniff_sep(p))
+        return pd.read_csv(p, nrows=n, sep=sniff_sep(p), decimal=decimal)
     if ext in PARQUET_EXT:
         import pyarrow.parquet as pq
         f = pq.ParquetFile(p)
@@ -115,7 +162,8 @@ def read_table(path: str | Path,
                nrows: Optional[int] = None,
                decimate_step: int = 1,
                float32: bool = False,
-               progress: Progress = None) -> pd.DataFrame:
+               progress: Progress = None,
+               decimal: str = ".") -> pd.DataFrame:
     """Lee aplicando los filtros DURANTE la lectura.
 
     columns        columnas a cargar (incluye ya la del eje X). None = todas.
@@ -123,11 +171,15 @@ def read_table(path: str | Path,
     decimate_step  quedarse con 1 de cada N filas sin materializar el resto.
     float32        mitad de RAM. Para dibujar y para estadisticas sobra; si tus
                    valores pasan de ~1e7 con decimales significativos, no.
+    decimal        separador decimal ('.' o ','). Con ',' los valores
+                   numéricos DEBEN ir entrecomillados en el CSV si el
+                   separador de campo también es ',' -- si no, son ambiguos
+                   y no hay forma de leerlos bien.
     """
     p = Path(path)
     ext = p.suffix.lower()
     if ext in CSV_EXT:
-        return _read_csv(p, columns, nrows, decimate_step, float32, progress)
+        return _read_csv(p, columns, nrows, decimate_step, float32, progress, decimal)
     if ext in PARQUET_EXT:
         return _read_parquet(p, columns, nrows, decimate_step, float32, progress)
     raise LoadError(f"Extension no soportada: {ext}")
@@ -142,9 +194,9 @@ def _downcast(df: pd.DataFrame, on: bool) -> pd.DataFrame:
     return df
 
 
-def _read_csv(p, columns, nrows, step, float32, cb) -> pd.DataFrame:
+def _read_csv(p, columns, nrows, step, float32, cb, decimal=".") -> pd.DataFrame:
     sep = sniff_sep(p)
-    kw = dict(sep=sep, engine="c")
+    kw = dict(sep=sep, engine="c", decimal=decimal)
     if columns:
         kw["usecols"] = columns
 

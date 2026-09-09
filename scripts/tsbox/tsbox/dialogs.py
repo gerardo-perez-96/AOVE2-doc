@@ -21,9 +21,31 @@ class LoadDialog(QtWidgets.QDialog):
         self.path = Path(path)
         self.setWindowTitle(f"Abrir {self.path.name}")
         self.resize(560, 560)
-        self.preview = loader.peek_columns(self.path)
+        self._sep = loader.sniff_sep(self.path)
+        decimal_guess = loader.sniff_decimal(self.path, self._sep)
+        self.preview = loader.peek_columns(self.path, decimal=decimal_guess)
 
         lay = QtWidgets.QVBoxLayout(self)
+
+        # --- formato numérico: separador decimal. Se detecta solo, pero
+        # editable -- un CSV con sep=',' y decimal=',' es ambiguo carácter a
+        # carácter si algún valor no queda entrecomillado, así que la
+        # heurística puede fallar en ficheros raros.
+        gd = QtWidgets.QGroupBox("Formato numérico")
+        fd = QtWidgets.QHBoxLayout(gd)
+        fd.addWidget(QtWidgets.QLabel("Separador decimal"))
+        self.cmb_decimal = QtWidgets.QComboBox()
+        self.cmb_decimal.addItem("Punto (3.14)", ".")
+        self.cmb_decimal.addItem("Coma (3,14)", ",")
+        self.cmb_decimal.setCurrentIndex(1 if decimal_guess == "," else 0)
+        self.cmb_decimal.setToolTip(
+            "Si tus columnas numéricas aparecen como texto (no se pueden "
+            "marcar en la tabla de abajo), es casi siempre esto: el fichero "
+            "usa coma como separador decimal (locale ES/PT/BR/DE...) en vez "
+            "de punto.")
+        self.cmb_decimal.currentIndexChanged.connect(self._on_decimal_changed)
+        fd.addWidget(self.cmb_decimal, 1)
+        lay.addWidget(gd)
 
         # --- eje X
         gx = QtWidgets.QGroupBox("Eje X")
@@ -183,6 +205,20 @@ class LoadDialog(QtWidgets.QDialog):
         lay.addWidget(bb)
 
         self.table.itemChanged.connect(lambda *_: self._refresh_cost())
+        self._refresh_table()
+        self._detect_long()
+        self._detect_repeated()
+        self._refresh_cost()
+
+    def decimal(self) -> str:
+        return self.cmb_decimal.currentData()
+
+    def _on_decimal_changed(self) -> None:
+        """Recarga la vista previa con el nuevo separador decimal: cambia
+        qué columnas se detectan como numéricas, así que toda la UI que
+        depende de eso (tabla, formato largo, eje X repetido, coste) tiene
+        que rehacerse -- no basta con re-etiquetar lo ya mostrado."""
+        self.preview = loader.peek_columns(self.path, decimal=self.decimal())
         self._refresh_table()
         self._detect_long()
         self._detect_repeated()

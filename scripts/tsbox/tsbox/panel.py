@@ -23,6 +23,12 @@ GAP_STRIP_FRAC = 0.07     # alto de esa franja, en fraccion del panel
 MAX_GAP_ITEMS = 200          # por encima de esto, se dibuja vectorizado
 GAP_DETAIL_LIMIT = 20_000    # por encima, se agrupan en bandas
 PANEL_MIME = "application/x-tsbox-panel-sid"
+# Distinto de PANEL_MIME: ese arrastra un PANEL para reordenarlo (drag handle
+# del propio panel); este arrastra una SERIE desde el árbol lateral para
+# combinarla con el panel donde se suelta (superponer o restar), sin tocar
+# el orden de nada. Los dos tipos comparten dropEvent() pero se distinguen
+# por MIME, igual que dragEnterEvent ya discrimina por formato.
+SERIES_MIME = "application/x-tsbox-series-sid"
 
 
 class GapOverlay(pg.GraphicsObject):
@@ -250,6 +256,7 @@ class SeriesPanel(QtWidgets.QFrame):
     sigRegionClicked = QtCore.Signal(str)                  # aid (región o zona global)
     sigCursor = QtCore.Signal(float, float)
     sigReorderDrop = QtCore.Signal(str, str, bool)  # sid_arrastrado, sid_destino, antes
+    sigCombineDrop = QtCore.Signal(str, str)        # sid_arrastrado, sid_destino (este panel)
     sigDragStarted = QtCore.Signal()
     sigDragEnded = QtCore.Signal()
 
@@ -420,14 +427,22 @@ class SeriesPanel(QtWidgets.QFrame):
     # entre la segunda y la primera" que ya hacía la lista lateral, pero
     # ahora también funciona arrastrando el panel mismo en la interfaz.
     def dragEnterEvent(self, ev) -> None:
-        if ev.mimeData().hasFormat(PANEL_MIME):
+        if ev.mimeData().hasFormat(PANEL_MIME) or ev.mimeData().hasFormat(SERIES_MIME):
             ev.acceptProposedAction()
 
     def dragMoveEvent(self, ev) -> None:
-        if ev.mimeData().hasFormat(PANEL_MIME):
+        if ev.mimeData().hasFormat(PANEL_MIME) or ev.mimeData().hasFormat(SERIES_MIME):
             ev.acceptProposedAction()
 
     def dropEvent(self, ev) -> None:
+        if ev.mimeData().hasFormat(SERIES_MIME):
+            # Serie soltada desde el árbol lateral: combinar con la de este
+            # panel (superponer o restar), no reordenar nada.
+            dragged_sid = bytes(ev.mimeData().data(SERIES_MIME)).decode("utf-8")
+            if dragged_sid != self.sid:
+                self.sigCombineDrop.emit(dragged_sid, self.sid)
+            ev.acceptProposedAction()
+            return
         if not ev.mimeData().hasFormat(PANEL_MIME):
             return
         dragged_sid = bytes(ev.mimeData().data(PANEL_MIME)).decode("utf-8")
@@ -439,13 +454,28 @@ class SeriesPanel(QtWidgets.QFrame):
 
     # ------------------------------------------------------------- dibujo
     def redraw(self) -> None:
+        self.chip.setStyleSheet(f"background:{self.sdef.color}; border-radius:3px;")
+        self.title.setText(f"<b>{self.sdef.name}</b>"
+                           f"<span style='color:#888'> · {self.sdef.describe()}</span>")
+        if self.session.is_pending(self.sid):
+            # La receta se está calculando en otro hilo (ver
+            # deriveworker.py): session.values() aquí devolvería un array
+            # de NaN, y dibujarlo o calcular huecos/estadísticas sobre eso
+            # mentiría ("100% de datos faltantes"). Se deja la curva vacía
+            # y un aviso, sin tocar nada más -- el resultado real llega por
+            # on_derive_done() -> redraw(), que ya no estará pendiente.
+            self.curve.setData([], [])
+            self.missing_lbl.setText("⏳ calculando…")
+            self.missing_lbl.setStyleSheet("color:#888;")
+            self.missing_lbl.setToolTip("")
+            self.stats_lbl.setText("")
+            return
+        self.missing_lbl.setStyleSheet("color:#d04040;")
+
         x = self.session.x
         y = self.session.values(self.sid)
         self.curve.setData(x, y, connect="finite")
         self.curve.setPen(pg.mkPen(self.sdef.color, width=1))
-        self.chip.setStyleSheet(f"background:{self.sdef.color}; border-radius:3px;")
-        self.title.setText(f"<b>{self.sdef.name}</b>"
-                           f"<span style='color:#888'> · {self.sdef.describe()}</span>")
         self.redraw_overlays()
         self.redraw_gaps()
         if not self._x_init:
@@ -458,10 +488,16 @@ class SeriesPanel(QtWidgets.QFrame):
         self.update_stats()
 
     def redraw_overlays(self) -> None:
-        """Derivadas marcadas como 'superponer': van al eje Y derecho, porque
-        una derivada y su señal original no comparten rango numérico."""
+        """Series superpuestas en este panel, eje Y derecho: las derivadas
+        marcadas 'superponer sobre el padre' (overlay_on_parent) Y, aparte,
+        cualquier serie arrastrada aquí con overlay_with -- las dos vías
+        conviven porque una es automática (nace ya superpuesta al crear la
+        derivada) y la otra es un gesto explícito del usuario sobre DOS
+        series sin relación de parentesco."""
         wanted = {s.sid: s for s in self.session.project.series
-                  if s.parent == self.sid and s.overlay_on_parent and s.visible}
+                  if s.visible and (
+                      (s.parent == self.sid and s.overlay_on_parent)
+                      or s.overlay_with == self.sid)}
         if wanted:
             self._ensure_vb2()
         for sid, item in list(self._overlay_curves.items()):
@@ -470,6 +506,13 @@ class SeriesPanel(QtWidgets.QFrame):
                     self.vb2.removeItem(item)
                 del self._overlay_curves[sid]
         for sid, sd in wanted.items():
+            if self.session.is_pending(sid):
+                # Igual que el panel propio de la serie: no calcular aquí
+                # (sería síncrono, en el hilo de UI) mientras el resultado
+                # está en camino en el hilo aparte. Se deja el overlay como
+                # esté -- on_derive_done() -> refresh_visibility() lo
+                # repintará con el dato real en cuanto llegue.
+                continue
             y = self.session.values(sid)
             if sid in self._overlay_curves:
                 self._overlay_curves[sid].setData(self.session.x, y, connect="finite")
@@ -541,6 +584,13 @@ class SeriesPanel(QtWidgets.QFrame):
         self.redraw_gaps()
 
     def redraw_gaps(self) -> None:
+        if self.session.is_pending(self.sid):
+            # set_show_gaps() (toggle del menú Ver) llama a esto para TODOS
+            # los paneles sin pasar por redraw(): sin este guard, pisaría el
+            # aviso "calculando…" con "100% sin valor" calculado sobre el
+            # placeholder de NaN, que es mentira -- el dato real aún no ha
+            # llegado, no es que falte.
+            return
         for it in self._gap_items:
             self.plot.removeItem(it)
         self._gap_items.clear()
@@ -591,6 +641,13 @@ class SeriesPanel(QtWidgets.QFrame):
         self.update_stats()
 
     def update_stats(self) -> None:
+        if self.session.is_pending(self.sid):
+            # Igual que redraw_gaps(): esto se dispara también desde el
+            # timer de debounce del zoom y desde set_show_stat_lines(), no
+            # solo desde redraw() -- sin el guard, se calcularían "μ=NaN,
+            # σ=NaN" sobre el placeholder mientras el resultado real aún no
+            # ha llegado.
+            return
         (x0, x1), _ = self.vb.viewRange()
         s = self.session.stats(self.sid, x0, x1)
         self.stats_lbl.setText(fmt_stats(s))

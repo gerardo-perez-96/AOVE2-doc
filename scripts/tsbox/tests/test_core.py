@@ -184,6 +184,49 @@ def test_borrar_padre_borra_hijos(csv):
     assert s.project.by_id(d.sid) is None
 
 
+# --- cálculo pendiente (hilo aparte, ver deriveworker.py) ------------------
+def test_values_de_serie_pendiente_no_calcula(csv):
+    """Mientras un sid está marcado pendiente, values() no debe ejecutar la
+    receta -- eso duplicaría el trabajo del hilo aparte en el hilo de UI."""
+    s = Session()
+    s.open(csv, x_mode="index", x_column=None)
+    base = s.project.by_name("sig")
+    d = s.add_derived(base.sid, KIND_ROLLING_MEAN, {"window": 5})
+
+    s.mark_pending(d.sid)
+    assert s.is_pending(d.sid)
+    y = s.values(d.sid)
+    assert len(y) == len(s.x)
+    assert np.all(np.isnan(y))          # placeholder, no la media móvil real
+    assert d.sid not in s._cache        # no se cacheó el placeholder
+
+
+def test_set_cached_resuelve_pendiente(csv):
+    s = Session()
+    s.open(csv, x_mode="index", x_column=None)
+    base = s.project.by_name("sig")
+    d = s.add_derived(base.sid, KIND_ROLLING_MEAN, {"window": 5})
+
+    s.mark_pending(d.sid)
+    expected = transforms.rolling_mean(s.values(base.sid), 5)
+    s.set_cached(d.sid, expected)
+
+    assert not s.is_pending(d.sid)
+    assert np.array_equal(s.values(d.sid), expected, equal_nan=True)
+
+
+def test_invalidate_no_afecta_pending_de_otro_sid(csv):
+    s = Session()
+    s.open(csv, x_mode="index", x_column=None)
+    base = s.project.by_name("sig")
+    d1 = s.add_derived(base.sid, KIND_ROLLING_MEAN, {"window": 5})
+    d2 = s.add_derived(base.sid, KIND_DERIVATIVE, {})
+
+    s.mark_pending(d1.sid)
+    s.invalidate(d2.sid)
+    assert s.is_pending(d1.sid)         # invalidate(d2) no debe tocar d1
+
+
 def test_no_pisa_json_ajeno(tmp_path):
     p = tmp_path / "otro.json"
     p.write_text('{"algo": 1}')

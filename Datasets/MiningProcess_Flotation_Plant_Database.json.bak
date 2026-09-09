@@ -1,0 +1,994 @@
+{
+  "app": "tsbox",
+  "schema_version": 1,
+  "source": {
+    "path": "C:\\Users\\COMPUTAEX\\Documents\\Gerardo\\AOVE2\\Datasets\\MiningProcess_Flotation_Plant_Database.csv",
+    "quick_hash": "6aa1bc945f8b80e892c0fad8addc1b1e",
+    "size": 183766261,
+    "mtime": 1788937362.3695812,
+    "x_mode": "column",
+    "x_column": "date",
+    "x_is_datetime": true,
+    "max_samples": null,
+    "sample_policy": "truncate",
+    "long_mode": "pivot",
+    "group_column": "",
+    "group_value": null,
+    "unstack_repeated_x": true,
+    "samples_per_step": 146,
+    "decimal": ","
+  },
+  "series": [
+    {
+      "sid": "s_b44a7d69",
+      "name": "% Silica Feed",
+      "kind": "raw",
+      "column": "% Silica Feed",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#F5A623",
+      "order": 0,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_832c0f55",
+      "name": "Starch Flow",
+      "kind": "raw",
+      "column": "Starch Flow",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#7ED321",
+      "order": 3,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_c1d34b6c",
+      "name": "Amina Flow",
+      "kind": "raw",
+      "column": "Amina Flow",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#D0021B",
+      "order": 5,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_7cb1f8f0",
+      "name": "Ore Pulp Flow",
+      "kind": "raw",
+      "column": "Ore Pulp Flow",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#BD10E0",
+      "order": 7,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_f775a859",
+      "name": "Ore Pulp pH",
+      "kind": "raw",
+      "column": "Ore Pulp pH",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#50E3C2",
+      "order": 11,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_187dc5a6",
+      "name": "Ore Pulp Density",
+      "kind": "raw",
+      "column": "Ore Pulp Density",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#B8E986",
+      "order": 13,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_8d527d51",
+      "name": "Flotation Column 01 Air Flow",
+      "kind": "raw",
+      "column": "Flotation Column 01 Air Flow",
+      "parent": null,
+      "params": {},
+      "visible": true,
+      "color": "#9013FE",
+      "order": 15,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_ce9e2560",
+      "name": "Flotation Column 02 Air Flow",
+      "kind": "raw",
+      "column": "Flotation Column 02 Air Flow",
+      "parent": null,
+      "params": {},
+      "visible": true,
+      "color": "#F8E71C",
+      "order": 16,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_ac2c483f",
+      "name": "Flotation Column 03 Air Flow",
+      "kind": "raw",
+      "column": "Flotation Column 03 Air Flow",
+      "parent": null,
+      "params": {},
+      "visible": true,
+      "color": "#FF6F61",
+      "order": 17,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_91adef9d",
+      "name": "Flotation Column 04 Air Flow",
+      "kind": "raw",
+      "column": "Flotation Column 04 Air Flow",
+      "parent": null,
+      "params": {},
+      "visible": true,
+      "color": "#4C9AFF",
+      "order": 18,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_e2f9568b",
+      "name": "Flotation Column 05 Air Flow",
+      "kind": "raw",
+      "column": "Flotation Column 05 Air Flow",
+      "parent": null,
+      "params": {},
+      "visible": true,
+      "color": "#F5A623",
+      "order": 19,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_e6846696",
+      "name": "Flotation Column 06 Air Flow",
+      "kind": "raw",
+      "column": "Flotation Column 06 Air Flow",
+      "parent": null,
+      "params": {},
+      "visible": true,
+      "color": "#7ED321",
+      "order": 20,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_a27f6e2a",
+      "name": "Flotation Column 07 Air Flow",
+      "kind": "raw",
+      "column": "Flotation Column 07 Air Flow",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#D0021B",
+      "order": 21,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_2d3dceb1",
+      "name": "Flotation Column 01 Level",
+      "kind": "raw",
+      "column": "Flotation Column 01 Level",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#BD10E0",
+      "order": 22,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_48509fe5",
+      "name": "Flotation Column 02 Level",
+      "kind": "raw",
+      "column": "Flotation Column 02 Level",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#50E3C2",
+      "order": 23,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_24aa4350",
+      "name": "Flotation Column 03 Level",
+      "kind": "raw",
+      "column": "Flotation Column 03 Level",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#B8E986",
+      "order": 24,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_31a0bee8",
+      "name": "Flotation Column 04 Level",
+      "kind": "raw",
+      "column": "Flotation Column 04 Level",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#9013FE",
+      "order": 25,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_2fd869f6",
+      "name": "Flotation Column 05 Level",
+      "kind": "raw",
+      "column": "Flotation Column 05 Level",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#F8E71C",
+      "order": 26,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_999b3403",
+      "name": "Flotation Column 06 Level",
+      "kind": "raw",
+      "column": "Flotation Column 06 Level",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#FF6F61",
+      "order": 28,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_14607e0b",
+      "name": "Flotation Column 07 Level",
+      "kind": "raw",
+      "column": "Flotation Column 07 Level",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#4C9AFF",
+      "order": 30,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_4eebd359",
+      "name": "% Silica Concentrate",
+      "kind": "raw",
+      "column": "% Silica Concentrate",
+      "parent": null,
+      "params": {},
+      "visible": false,
+      "color": "#7ED321",
+      "order": 32,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_8f7b3726",
+      "name": "Ore Pulp Flow · rolling_mean(180)",
+      "kind": "rolling_mean",
+      "column": null,
+      "parent": "s_7cb1f8f0",
+      "params": {
+        "window": 180,
+        "center": true
+      },
+      "visible": true,
+      "color": "#F5A623",
+      "order": 8,
+      "overlay_on_parent": true,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_9fc8e2b1",
+      "name": "% Silica Concentrate · rolling_mean(180)",
+      "kind": "rolling_mean",
+      "column": null,
+      "parent": "s_4eebd359",
+      "params": {
+        "window": 180,
+        "center": true
+      },
+      "visible": false,
+      "color": "#7ED321",
+      "order": 2,
+      "overlay_on_parent": true,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_8ffe3870",
+      "name": "Amina Flow · rolling_mean(180)",
+      "kind": "rolling_mean",
+      "column": null,
+      "parent": "s_c1d34b6c",
+      "params": {
+        "window": 180,
+        "center": true
+      },
+      "visible": true,
+      "color": "#D0021B",
+      "order": 6,
+      "overlay_on_parent": true,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_071477e3",
+      "name": "Ore Pulp pH · rolling_mean(180)",
+      "kind": "rolling_mean",
+      "column": null,
+      "parent": "s_f775a859",
+      "params": {
+        "window": 180,
+        "center": true
+      },
+      "visible": true,
+      "color": "#BD10E0",
+      "order": 12,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_7b36b6d3",
+      "name": "Starch Flow · rolling_mean(180)",
+      "kind": "rolling_mean",
+      "column": null,
+      "parent": "s_832c0f55",
+      "params": {
+        "window": 180,
+        "center": true
+      },
+      "visible": true,
+      "color": "#50E3C2",
+      "order": 4,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_d6c57164",
+      "name": "Ore Pulp Density · rolling_mean(180)",
+      "kind": "rolling_mean",
+      "column": null,
+      "parent": "s_187dc5a6",
+      "params": {
+        "window": 180,
+        "center": true
+      },
+      "visible": true,
+      "color": "#B8E986",
+      "order": 14,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_589408ca",
+      "name": "Flotation Column 07 Level · rolling_mean(180)",
+      "kind": "rolling_mean",
+      "column": null,
+      "parent": "s_14607e0b",
+      "params": {
+        "window": 180,
+        "center": true
+      },
+      "visible": false,
+      "color": "#9013FE",
+      "order": 31,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_4ab206b7",
+      "name": "Flotation Column 06 Level · rolling_mean(180)",
+      "kind": "rolling_mean",
+      "column": null,
+      "parent": "s_999b3403",
+      "params": {
+        "window": 180,
+        "center": true
+      },
+      "visible": false,
+      "color": "#F8E71C",
+      "order": 29,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_a7dab022",
+      "name": "Ore Pulp Flow · rolling_mean(180) · derivative",
+      "kind": "derivative",
+      "column": null,
+      "parent": "s_8f7b3726",
+      "params": {},
+      "visible": false,
+      "color": "#FF6F61",
+      "order": 9,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_d8b07d4f",
+      "name": "Flotation Column 05 Level · derivative",
+      "kind": "derivative",
+      "column": null,
+      "parent": "s_2fd869f6",
+      "params": {},
+      "visible": false,
+      "color": "#4C9AFF",
+      "order": 27,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_ff650a74",
+      "name": "Ore Pulp Flow · derivative",
+      "kind": "derivative",
+      "column": null,
+      "parent": "s_7cb1f8f0",
+      "params": {},
+      "visible": false,
+      "color": "#F5A623",
+      "order": 10,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_eb7625d5",
+      "name": "% Silica Feed · derivative",
+      "kind": "derivative",
+      "column": null,
+      "parent": "s_b44a7d69",
+      "params": {},
+      "visible": false,
+      "color": "#7ED321",
+      "order": 1,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    },
+    {
+      "sid": "s_337e7e7d",
+      "name": "% Silica Concentrate · derivative",
+      "kind": "derivative",
+      "column": null,
+      "parent": "s_4eebd359",
+      "params": {},
+      "visible": false,
+      "color": "#D0021B",
+      "order": 33,
+      "overlay_on_parent": false,
+      "overlay_with": null,
+      "show_stats_lines": false,
+      "hidden_reason": ""
+    }
+  ],
+  "regions": [
+    {
+      "aid": "r_1b6f1615",
+      "sid": "s_b44a7d69",
+      "t0": 34615.91087751559,
+      "t1": 43095.09586404181,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "r_1430c837",
+      "sid": "s_f775a859",
+      "t0": 1503649989.439801,
+      "t1": 1503661982.6616719,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_7070c3ef",
+      "sid": "s_f775a859",
+      "t0": 1503673975.883543,
+      "t1": 1503678948.6828554,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_a1f025c4",
+      "sid": "s_f775a859",
+      "t0": 1503700302.4681377,
+      "t1": 1503720193.6653872,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_1b480c81",
+      "sid": "s_f775a859",
+      "t0": 1503728676.675979,
+      "t1": 1503750615.4964745,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_3d58a8a3",
+      "sid": "s_f775a859",
+      "t0": 1503757013.306628,
+      "t1": 1503778095.7610056,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_4f3a88b1",
+      "sid": "s_f775a859",
+      "t0": 1503882130.4089065,
+      "t1": 1503887621.0843806,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_d0ba655c",
+      "sid": "s_f775a859",
+      "t0": 1503893273.25031,
+      "t1": 1503899571.3780596,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_8200117a",
+      "sid": "s_f775a859",
+      "t0": 1503907484.4103608,
+      "t1": 1503910552.7290082,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_a31e6cf4",
+      "sid": "s_f775a859",
+      "t0": 1503958515.394179,
+      "t1": 1503978217.2297041,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_98f98526",
+      "sid": "s_f775a859",
+      "t0": 1503980962.5674412,
+      "t1": 1503990006.032928,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_f515d358",
+      "sid": "s_f775a859",
+      "t0": 1504007928.6423175,
+      "t1": 1504011433.7830572,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_f385b5db",
+      "sid": "s_f775a859",
+      "t0": 1504021723.0671642,
+      "t1": 1504043658.464052,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_81aac034",
+      "sid": "s_f775a859",
+      "t0": 1504050555.6764753,
+      "t1": 1504120206.2150464,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_899b33ad",
+      "sid": "s_f775a859",
+      "t0": 1504143942.723453,
+      "t1": 1504146195.6218438,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_cfaaf4fc",
+      "sid": "s_f775a859",
+      "t0": 1504221155.695571,
+      "t1": 1504228324.0086324,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_aae2e0f2",
+      "sid": "s_f775a859",
+      "t0": 1504629446.0860188,
+      "t1": 1504634163.5439618,
+      "label": "",
+      "color": "#9419ff"
+    },
+    {
+      "aid": "r_d4134787",
+      "sid": "s_f775a859",
+      "t0": 1504610271.9021213,
+      "t1": 1504611184.9584973,
+      "label": "",
+      "color": "#9419ff"
+    }
+  ],
+  "marks": [
+    {
+      "aid": "m_685874aa",
+      "sid": "s_7cb1f8f0",
+      "t": 1501511205.2856312,
+      "label": "Cambio de regimen. A partir de aquí, la señal comienza a saturar a sus valores maximos y mínimos de forma permanente hasta el fin de la campaña. comienza en el momento en el que silica feed tiene el menor valor de toda la campaña",
+      "color": "#ffea01"
+    },
+    {
+      "aid": "m_402a1837",
+      "sid": "s_7b36b6d3",
+      "t": 1493914429.1691577,
+      "label": "Cambio de regimen. Media y varianza se incrementan",
+      "color": "#ffea01"
+    },
+    {
+      "aid": "m_c7b36d70",
+      "sid": "s_071477e3",
+      "t": 1503564545.894802,
+      "label": "Parece otro cambio de regimen. Los valores bajan notablemente, llegando incluso a saturar por debajo la señal",
+      "color": "#ffea01"
+    }
+  ],
+  "global_regions": [
+    {
+      "aid": "g_92615873",
+      "t0": 1489095003.777618,
+      "t1": 1492969769.346155,
+      "label": "borrar",
+      "color": "#ffffff",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_0d134a75",
+      "t0": 1494667599.6379795,
+      "t1": 1497485982.836809,
+      "label": "",
+      "color": "#0728ff",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_627bd552",
+      "t0": 1500863190.6568053,
+      "t1": 1501774009.6174026,
+      "label": "",
+      "color": "#0728ff",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_d38aba6c",
+      "t0": 1502075596.988448,
+      "t1": 1502751268.4839513,
+      "label": "",
+      "color": "#0728ff",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_e044c9df",
+      "t0": 1495611955.3532844,
+      "t1": 1495651579.0052688,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_ce974391",
+      "t0": 1493111289.0284429,
+      "t1": 1493144318.3057408,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_48a44a56",
+      "t0": 1494405573.1956818,
+      "t1": 1494451231.769829,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_cb812bb2",
+      "t0": 1491891859.5353706,
+      "t1": 1491946950.3512547,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_21a8046f",
+      "t0": 1491231365.5035055,
+      "t1": 1491253560.0711033,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_5eb5503c",
+      "t0": 1498037662.9746354,
+      "t1": 1498097588.1785185,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_075dee6b",
+      "t0": 1499180265.461239,
+      "t1": 1499219286.5242329,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_bed85535",
+      "t0": 1499342620.9554808,
+      "t1": 1499368402.7292445,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_fd85ae3e",
+      "t0": 1499754828.5371215,
+      "t1": 1499767976.5818079,
+      "label": "",
+      "color": "#11ff00",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_8cc53d47",
+      "t0": 1499955231.49712,
+      "t1": 1499962663.0006385,
+      "label": "",
+      "color": "#11ff00",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_d0830c78",
+      "t0": 1500540784.7676005,
+      "t1": 1500571708.763914,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_ba09ea20",
+      "t0": 1502935875.4761739,
+      "t1": 1503027483.4175048,
+      "label": "",
+      "color": "#ffea01",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_eef732ab",
+      "t0": 1490978141.1617415,
+      "t1": 1491112855.2254512,
+      "label": "",
+      "color": "#0728ff",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_c871c6a3",
+      "t0": 1492761837.7308383,
+      "t1": 1493005220.9103072,
+      "label": "",
+      "color": "#0728ff",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_7687baac",
+      "t0": 1494347117.35927,
+      "t1": 1494633257.04324,
+      "label": "",
+      "color": "#0728ff",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_7e996efe",
+      "t0": 1501539494.3604631,
+      "t1": 1501798067.1459846,
+      "label": "",
+      "color": "#ff0004",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_6b9f3ded",
+      "t0": 1496829132.2669914,
+      "t1": 1496850825.9686785,
+      "label": "",
+      "color": "#ffea01",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_f7738fa6",
+      "t0": 1497508935.4544446,
+      "t1": 1497519464.281884,
+      "label": "",
+      "color": "#ffea01",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_c12e3f7e",
+      "t0": 1498962676.2390282,
+      "t1": 1498971124.5764334,
+      "label": "",
+      "color": "#ffea01",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_1781d0af",
+      "t0": 1501656390.7458727,
+      "t1": 1501698956.5864575,
+      "label": "",
+      "color": "#ffea01",
+      "exclude_from_stats": false
+    },
+    {
+      "aid": "g_22a51c95",
+      "t0": 1500181847.4198205,
+      "t1": 1500226663.7057693,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
+    }
+  ],
+  "global_marks": [],
+  "notes": [
+    {
+      "nid": "n_5f88e23e",
+      "text": "- Zonas marcadas en verde: sin señal de amina ni ore ph. - Zonas marcadas en amarillo: tendencia rara común. - Azul: no hay dato actualizado de silica feed - Rojo: no hay dato actualizado de silica concentrate. - violeta: saturación del sensor de ph",
+      "created_at": 1788764805.2687216,
+      "x0": 1500260603.7010531,
+      "x1": 1502846633.717802,
+      "series": [
+        "s_b44a7d69",
+        "s_9fc8e2b1",
+        "s_c1d34b6c",
+        "s_f775a859"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "gid": "grp_54336338",
+      "name": "Ore pulp",
+      "members": [
+        "s_7cb1f8f0",
+        "s_f775a859",
+        "s_187dc5a6"
+      ]
+    },
+    {
+      "gid": "grp_49379f65",
+      "name": "Flotation columns",
+      "members": [
+        "s_8d527d51",
+        "s_ce9e2560",
+        "s_ac2c483f",
+        "s_91adef9d",
+        "s_e2f9568b",
+        "s_e6846696",
+        "s_a27f6e2a",
+        "s_2d3dceb1",
+        "s_48509fe5",
+        "s_24aa4350",
+        "s_31a0bee8",
+        "s_2fd869f6",
+        "s_999b3403",
+        "s_14607e0b"
+      ]
+    },
+    {
+      "gid": "grp_3360e9e4",
+      "name": "control_and_target",
+      "members": [
+        "s_7b36b6d3",
+        "s_b44a7d69",
+        "s_8ffe3870",
+        "s_8f7b3726",
+        "s_071477e3",
+        "s_d6c57164",
+        "s_9fc8e2b1"
+      ]
+    }
+  ],
+  "view": {
+    "xrange": [
+      1488174785.2542586,
+      1505997822.6289868
+    ]
+  }
+}

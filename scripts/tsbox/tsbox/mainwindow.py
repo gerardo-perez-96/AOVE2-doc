@@ -12,10 +12,11 @@ from PySide6.QtCore import Qt
 from . import commands as cmd
 from . import store
 from .analysis_ui import AnalysisWindow
+from .deriveworker import DeriveWorker
 from .dialogs import AddColumnsDialog, DerivedDialog, LoadDialog
 from .loadworker import LoadWorker
 from .model import GlobalMark, GlobalRegion, Group, Mark, Note, Region, new_id
-from .panel import YMODE_FULL, YMODE_WINDOW, SeriesPanel
+from .panel import SERIES_MIME, YMODE_FULL, YMODE_WINDOW, SeriesPanel
 from .session import Session
 from .transforms import fmt_x
 from .viewbox import (MODE_MARK, MODE_NAV, MODE_REGION, MODE_GLOBAL_MARK,
@@ -24,6 +25,31 @@ from .viewbox import (MODE_MARK, MODE_NAV, MODE_REGION, MODE_GLOBAL_MARK,
 AUTOSAVE_MS = 30_000
 
 
+class SeriesTree(QtWidgets.QTreeWidget):
+    """El árbol lateral de series necesita dos gestos de arrastre distintos
+    a la vez, y Qt solo da uno gratis: InternalMove ya reordena (mueve el
+    ITEM dentro del propio árbol), pero soltar una serie SOBRE UN PANEL para
+    superponerla o restarla no es un reorden, es otra operación -- así que,
+    además del MIME interno que Qt genera solo, el arrastre también lleva
+    el sid en SERIES_MIME. SeriesPanel.dropEvent() mira ese formato y, si
+    está, no toca el orden: emite sigCombineDrop en su lugar. Los dos
+    formatos conviven en el mismo QMimeData sin pisarse -- InternalMove
+    sigue funcionando exactamente igual que antes dentro del árbol.
+    """
+
+    def startDrag(self, actions) -> None:
+        item = self.currentItem()
+        if item is None:
+            super().startDrag(actions)
+            return
+        sid = item.data(0, Qt.UserRole)
+        mime = self.model().mimeData(self.selectedIndexes())
+        if sid:
+            mime.setData(SERIES_MIME, str(sid).encode("utf-8"))
+        drag = QtGui.QDrag(self)
+        drag.setMimeData(mime)
+        drag.setPixmap(self.viewport().grab(self.visualItemRect(item)))
+        drag.exec(actions, Qt.MoveAction)
 
 
 
@@ -40,6 +66,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._force_new_region = False   # Alt pulsado: dibuja encima sin editar la existente
         self.analysis: AnalysisWindow | None = None
         self._syncing = False
+        # Cálculo de derivadas en hilo aparte: varias pueden estar en marcha
+        # a la vez (crear dos sin esperar a que la primera termine), así que
+        # se indexan por sid en vez de guardarse en un único atributo -- a
+        # diferencia de la carga de fichero, que es de una en una.
+        self._derive_threads: dict[str, QtCore.QThread] = {}
+        self._derive_workers: dict[str, DeriveWorker] = {}
+        # sid del padre -> [(sid hijo, kind, params), ...] para derivadas
+        # creadas mientras su padre aún se estaba calculando (ver
+        # add_derived): se lanzan en cuanto el padre resuelve.
+        self._pending_children: dict[str, list[tuple[str, str, dict]]] = {}
 
         self._build_ui()
         self._build_actions()
@@ -68,7 +104,7 @@ class MainWindow(QtWidgets.QMainWindow):
         lv.addWidget(QtWidgets.QLabel(
             "<b>Series</b><br><span style='color:#888'>marca para mostrar · "
             "arrastra para reordenar</span>"))
-        self.list = QtWidgets.QTreeWidget()
+        self.list = SeriesTree()
         self.list.setHeaderHidden(True)
         self.list.setRootIsDecorated(True)
         self.list.setIndentation(14)
@@ -332,6 +368,13 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg = LoadDialog(Path(path), self)
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
+        # Abrir sustituye self.session.x y project por los del fichero nuevo:
+        # un cálculo de derivada en marcha del proyecto ANTERIOR seguiría
+        # trabajando sobre arrays de un tamaño que ya no corresponde a nada.
+        # El resultado, cuando llegue, se descartaría igualmente (su sid ya
+        # no existiría en el proyecto nuevo), pero esperar aquí evita tener
+        # dos "generaciones" de datos coexistiendo mientras tanto.
+        self._wait_derive_threads()
 
         kw = dict(data_path=path, x_mode=dlg.x_mode(), x_column=dlg.x_column(),
                   max_samples=dlg.max_samples(), sample_policy=dlg.sample_policy(),
@@ -339,7 +382,8 @@ class MainWindow(QtWidgets.QMainWindow):
                   long_mode=dlg.long_mode(), group_column=dlg.group_column(),
                   group_value=dlg.group_value(),
                   unstack_repeated_x=dlg.unstack_repeated_x(),
-                  samples_per_step=dlg.samples_per_step())
+                  samples_per_step=dlg.samples_per_step(),
+                  decimal=dlg.decimal())
         self._path = path
 
         self._prog = QtWidgets.QProgressDialog("Preparando...", "Cancelar", 0, 100, self)
@@ -399,29 +443,41 @@ class MainWindow(QtWidgets.QMainWindow):
         -- eso lo hace refresh_visibility()."""
         return self.session.project.ordered()
 
+    def _make_panel(self, s) -> SeriesPanel:
+        """Construye un SeriesPanel con todo su cableado de señales. OJO:
+        SeriesPanel.__init__ llama a redraw(), que pide session.values(sid)
+        -- si esa serie no está en caché (p.ej. una derivada del proyecto
+        que nunca se ha dibujado), el cálculo ocurre aquí, SÍNCRONO, en el
+        hilo de UI. Por eso _add_panel() existe aparte de rebuild_panels():
+        crear una sola serie no debe pagar el precio de recalcular todas
+        las demás sin cachear."""
+        p = SeriesPanel(self.session, s)
+        p.sigRegionDrawn.connect(self.on_region_drawn)
+        p.sigGlobalRegionDrawn.connect(self.on_global_region_drawn)
+        p.sigMarkDrawn.connect(self.on_mark_drawn)
+        p.sigGlobalMarkDrawn.connect(self.on_global_mark_drawn)
+        p.sigPanStep.connect(self.on_pan_step)
+        p.sigReorderDrop.connect(self.on_panel_drop)
+        p.sigCombineDrop.connect(self.on_combine_drop)
+        p.sigRegionClicked.connect(self.on_region_clicked)
+        p.sigDragStarted.connect(self._on_panel_drag_started)
+        p.sigDragEnded.connect(self._on_panel_drag_ended)
+        p.sigRegionEdited.connect(self.on_region_edited)
+        p.sigGlobalRegionEdited.connect(self.on_global_region_edited)
+        p.sigCloseRequested.connect(self.hide_series)
+        p.sigCursor.connect(self.on_cursor)
+        p.set_show_gaps(self.a_gaps.isChecked())
+        p.set_show_stat_lines(self.a_stats.isChecked())
+        p.set_mode(self._mode)
+        return p
+
     def rebuild_panels(self) -> None:
         for p in self.panels.values():
             p.setParent(None)
             p.deleteLater()
         self.panels.clear()
         for s in self.panel_series():
-            p = SeriesPanel(self.session, s)
-            p.sigRegionDrawn.connect(self.on_region_drawn)
-            p.sigGlobalRegionDrawn.connect(self.on_global_region_drawn)
-            p.sigMarkDrawn.connect(self.on_mark_drawn)
-            p.sigGlobalMarkDrawn.connect(self.on_global_mark_drawn)
-            p.sigPanStep.connect(self.on_pan_step)
-            p.sigReorderDrop.connect(self.on_panel_drop)
-            p.sigRegionClicked.connect(self.on_region_clicked)
-            p.sigDragStarted.connect(self._on_panel_drag_started)
-            p.sigDragEnded.connect(self._on_panel_drag_ended)
-            p.sigRegionEdited.connect(self.on_region_edited)
-            p.sigGlobalRegionEdited.connect(self.on_global_region_edited)
-            p.sigCloseRequested.connect(self.hide_series)
-            p.sigCursor.connect(self.on_cursor)
-            p.set_show_gaps(self.a_gaps.isChecked())
-            p.set_show_stat_lines(self.a_stats.isChecked())
-            p.set_mode(self._mode)
+            p = self._make_panel(s)
             self.splitter.addWidget(p)
             self.panels[s.sid] = p
         self.refresh_list()
@@ -429,9 +485,45 @@ class MainWindow(QtWidgets.QMainWindow):
         self.refresh_annotations()
         self.refresh_annotation_table()
         self.refresh_groups()
-        self.refresh_notes()
+
+    def _add_panel(self, sid: str) -> None:
+        """Añade el panel de UNA serie nueva, sin tocar los ya existentes.
+
+        A diferencia de rebuild_panels(), no recalcula ninguna serie que ya
+        estuviera en caché o pendiente -- solo construye (y por tanto
+        calcula, ver _make_panel) la serie nueva. Es lo que hace que crear
+        una derivada no bloquee la UI por culpa de OTRAS derivadas del
+        proyecto que nunca se habían materializado.
+        """
+        s = self.session.project.by_id(sid)
+        if s is None or sid in self.panels:
+            return
+        p = self._make_panel(s)
+        order = [x.sid for x in self.panel_series()]
+        pos = order.index(sid) if sid in order else len(order)
+        # cuenta solo paneles ya insertados que preceden a esta posición --
+        # el splitter no sabe nada de "order", solo de índices de widget.
+        before = sum(1 for other_sid in order[:pos] if other_sid in self.panels)
+        self.splitter.insertWidget(before, p)
+        self.panels[sid] = p
+        self.refresh_list()
+        self.refresh_visibility()
+        self.refresh_annotations()
+        self.refresh_annotation_table()
         self._relink(self.a_sync.isChecked())
-        self._apply_y_mode_to_new()
+        p.set_y_mode(YMODE_FULL if self.a_yfull.isChecked() else YMODE_WINDOW)
+
+    def _remove_panel(self, sid: str) -> None:
+        """Quita el panel de UNA serie, sin reconstruir los demás. Simétrico
+        a _add_panel() -- usado cuando un cálculo en hilo aparte falla y la
+        serie huérfana se retira (ver _on_derive_done)."""
+        p = self.panels.pop(sid, None)
+        if p is not None:
+            p.setParent(None)
+            p.deleteLater()
+        self.refresh_list()
+        self.refresh_visibility()
+        self.refresh_annotation_table()
 
     def _apply_y_mode_to_new(self) -> None:
         mode = YMODE_FULL if self.a_yfull.isChecked() else YMODE_WINDOW
@@ -619,6 +711,36 @@ class MainWindow(QtWidgets.QMainWindow):
         order.insert(idx if before else idx + 1, dragged_sid)
         self.undo.push(cmd.ReorderSeries(self, order))
 
+    def on_combine_drop(self, dragged_sid: str, onto_sid: str) -> None:
+        """Serie soltada desde el árbol sobre el panel de otra: pregunta si
+        quiere verse superpuesta ahí (misma serie, panel prestado) o si
+        prefiere una serie nueva con la diferencia -- el caso que motivó
+        esto, comparar una señal predicha con la real, casi siempre acaba
+        queriendo las dos cosas por turnos, así que se pregunta cada vez en
+        vez de fijar un comportamiento único."""
+        dragged = self.session.project.by_id(dragged_sid)
+        onto = self.session.project.by_id(onto_sid)
+        if dragged is None or onto is None:
+            return
+        box = QtWidgets.QMessageBox(self)
+        box.setWindowTitle("Combinar series")
+        box.setText(f"«{dragged.name}» sobre el panel de «{onto.name}»")
+        box.setInformativeText(
+            "Superponer: dibuja las dos en el mismo panel (eje Y derecho), "
+            "sin crear ninguna serie nueva.\n"
+            "Residuo: crea una serie nueva con la diferencia "
+            f"«{onto.name} − {dragged.name}», con su propio panel.")
+        b_overlay = box.addButton("Superponer", QtWidgets.QMessageBox.AcceptRole)
+        b_residual = box.addButton("Residuo (A − B)", QtWidgets.QMessageBox.ActionRole)
+        box.addButton("Cancelar", QtWidgets.QMessageBox.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is b_overlay:
+            self.undo.push(cmd.SetOverlayWith(self, dragged_sid, onto_sid))
+        elif clicked is b_residual:
+            s = self.session.add_residual(onto_sid, dragged_sid)
+            self._add_panel(s.sid)
+
     def hide_series(self, sid: str) -> None:
         s = self.session.project.by_id(sid)
         if s:
@@ -798,8 +920,68 @@ class MainWindow(QtWidgets.QMainWindow):
         p = self.session.project.by_id(parent)
         if overlay and p.is_derived and p.overlay_on_parent:
             overlay = False
-        self.session.add_derived(parent, kind, params, overlay)
-        self.rebuild_panels()
+        s = self.session.add_derived(parent, kind, params, overlay)
+        self.session.mark_pending(s.sid)
+        self._add_panel(s.sid)   # nace en estado "calculando…"; NO rebuild_panels()
+
+        if self.session.is_pending(parent):
+            # El padre a su vez se está calculando en otro hilo: no hay
+            # valores suyos todavía sobre los que lanzar este cálculo. Se
+            # encola -- _on_derive_done() del padre mirará _pending_children
+            # y lanzará este cálculo en cuanto el padre resuelva, en vez de
+            # bloquear aquí esperando o recalcular el padre síncronamente.
+            self._pending_children.setdefault(parent, []).append(
+                (s.sid, kind, params))
+            return
+
+        self._start_derive(s.sid, kind, params, self.session.x,
+                           self.session.values(parent))
+
+    def _start_derive(self, sid: str, kind: str, params: dict,
+                      x: np.ndarray, parent_y: np.ndarray) -> None:
+        worker = DeriveWorker(sid, kind, params, x, parent_y)
+        thread = QtCore.QThread(self)
+        worker.moveToThread(thread)
+        self._derive_threads[sid] = thread
+        self._derive_workers[sid] = worker
+        thread.started.connect(worker.run)
+        worker.sigDone.connect(self._on_derive_done)
+        thread.start()
+
+    @QtCore.Slot(str, object, str)
+    def _on_derive_done(self, sid: str, y, err: str) -> None:
+        thread = self._derive_threads.pop(sid, None)
+        self._derive_workers.pop(sid, None)
+        if thread is not None:
+            thread.quit()
+            thread.wait()
+
+        s = self.session.project.by_id(sid)
+        if s is None:
+            self._pending_children.pop(sid, None)
+            return   # la serie se borró mientras se calculaba
+
+        if y is None:
+            for child_sid, _, _ in self._pending_children.pop(sid, []):
+                self.session.project.series = [
+                    x for x in self.session.project.series if x.sid != child_sid]
+                self._remove_panel(child_sid)
+            self.session.project.series = [
+                x for x in self.session.project.series if x.sid != sid]
+            self.session.dirty = True
+            self._remove_panel(sid)
+            QtWidgets.QMessageBox.critical(
+                self, "No se pudo calcular la derivada", err)
+            return
+
+        self.session.set_cached(sid, y)
+        for child_sid, child_kind, child_params in self._pending_children.pop(sid, []):
+            self._start_derive(child_sid, child_kind, child_params,
+                               self.session.x, y)
+        p = self.panels.get(sid)
+        if p is not None:
+            p.redraw()
+        self.refresh_visibility()
 
     # ------------------------------------------------------ anotaciones
     def find_annotation(self, aid: str):
@@ -1165,7 +1347,35 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             if r == QtWidgets.QMessageBox.Save:
                 self.save(manual=True)
+        self._wait_derive_threads()
         ev.accept()
+
+    def _wait_derive_threads(self) -> None:
+        """Espera a que terminen los cálculos de derivadas en marcha antes de
+        cerrar. Destruir un QThread en ejecución (al salir de la app) es
+        undefined behaviour en Qt -- el cálculo ya está lanzado y suele ser
+        cuestión de milisegundos a segundos, así que esperar aquí es más
+        seguro que intentar cancelarlo a mitad de un rolling/filtfilt.
+
+        _on_derive_done() puede lanzar un hijo encolado (_pending_children)
+        justo al recibir sigDone de su padre -- eso añade una entrada NUEVA
+        a _derive_threads mientras este bucle corre. La señal sigDone es
+        Qt.AutoConnection entre hilos distintos, es decir QueuedConnection:
+        no se entrega hasta que el hilo receptor (este, el de UI) procesa su
+        bucle de eventos, cosa que thread.wait() NO hace por sí solo -- por
+        eso hace falta processEvents() después de cada wait(), o el sigDone
+        del hilo que acaba de terminar se queda encolado sin procesar y
+        _on_derive_done() (que es quien de verdad popularía _pending_children
+        y lanzaría el hijo) nunca llega a ejecutarse aquí.
+        """
+        while self._derive_threads:
+            sid, thread = next(iter(self._derive_threads.items()))
+            thread.quit()
+            thread.wait()
+            QtCore.QCoreApplication.processEvents()
+            self._derive_threads.pop(sid, None)
+            self._derive_workers.pop(sid, None)
+        self._pending_children.clear()
 
     # -------------------------------------------------------- análisis
     def open_analysis(self) -> None:

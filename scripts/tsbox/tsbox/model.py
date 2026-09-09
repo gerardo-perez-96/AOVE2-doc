@@ -14,8 +14,13 @@ KIND_ROLLING_STD = "rolling_std"
 KIND_DERIVATIVE = "derivative"
 KIND_LAG = "lag"
 KIND_BUTTER = "butterworth"
+KIND_RESIDUAL = "residual"        # A - B, dos series de origen distinto
 DERIVED_KINDS = (KIND_ROLLING_MEAN, KIND_ROLLING_STD, KIND_DERIVATIVE, KIND_LAG,
                  KIND_BUTTER)
+# Derivadas de UN padre (transforms.apply_recipe(kind, params, x, parent_y)).
+# KIND_RESIDUAL no entra aquí: necesita DOS series (parent + params['other_sid']),
+# así que Session.values() lo trata aparte en vez de por la vía genérica.
+TWO_INPUT_KINDS = (KIND_RESIDUAL,)
 
 PALETTE = [
     "#4C9AFF", "#F5A623", "#7ED321", "#D0021B", "#BD10E0",
@@ -40,12 +45,14 @@ class SeriesDef:
     color: Optional[str] = None
     order: int = 0
     overlay_on_parent: bool = False   # dibujar en el panel del padre, eje Y derecho
+    overlay_with: Optional[str] = None  # dibujar TAMBIÉN en el panel de este sid
+                                        # (eje Y derecho), sin relación parent/hijo
     show_stats_lines: bool = False
     hidden_reason: str = ""           # "" | "not_loaded" (ver session._prune_missing_columns)
 
     @property
     def is_derived(self) -> bool:
-        return self.kind in DERIVED_KINDS
+        return self.kind in DERIVED_KINDS or self.kind in TWO_INPUT_KINDS
 
     def describe(self) -> str:
         if self.kind == KIND_ROLLING_MEAN:
@@ -68,6 +75,8 @@ class SeriesDef:
             phase = "fase cero" if self.params.get("zero_phase", True) else "causal"
             return (f"Butterworth {label} orden {self.params.get('order')} "
                     f"@ {freq} ({phase})")
+        if self.kind == KIND_RESIDUAL:
+            return f"residuo ({self.params.get('other_name', '?')})"
         return "original"
 
 
@@ -172,6 +181,7 @@ class SourceInfo:
     group_value: Optional[str] = None
     unstack_repeated_x: bool = False
     samples_per_step: Optional[int] = None
+    decimal: str = "."               # "." | ","
 
 
 @dataclass
@@ -274,15 +284,32 @@ class Project:
         return slot
 
     def remove_series(self, sid: str) -> list[str]:
-        """Borra la serie y toda su descendencia. Devuelve los ids borrados."""
+        """Borra la serie y toda su descendencia. Devuelve los ids borrados.
+
+        Un KIND_RESIDUAL depende de DOS series (su `parent` y
+        `params['other_sid']`), no solo de `parent` como el resto de
+        derivadas: si cualquiera de las dos desaparece, el residuo deja de
+        poder calcularse y se borra también, igual que un hijo normal
+        cuando desaparece su único padre.
+        """
         doomed, stack = [], [sid]
         while stack:
             cur = stack.pop()
             doomed.append(cur)
             stack.extend(c.sid for c in self.children_of(cur))
+            stack.extend(s.sid for s in self.series
+                         if s.kind == KIND_RESIDUAL and s.sid not in doomed
+                         and s.params.get("other_sid") == cur)
         self.series = [s for s in self.series if s.sid not in doomed]
         self.regions = [r for r in self.regions if r.sid not in doomed]
         self.marks = [m for m in self.marks if m.sid not in doomed]
+        # Un overlay "libre" (overlay_with, no relación padre/hijo) que
+        # apuntaba a una serie borrada se limpia solo -- la serie sigue
+        # existiendo con su propio panel, solo deja de superponerse en el
+        # panel que ya no está.
+        for s in self.series:
+            if s.overlay_with in doomed:
+                s.overlay_with = None
         # Una nota puede referenciar varias series a la vez (es contexto, no
         # pertenencia): si una desaparece, se limpia de la lista en vez de
         # borrar la nota entera -- el texto sigue siendo válido.

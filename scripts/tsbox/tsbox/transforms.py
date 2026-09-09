@@ -146,6 +146,14 @@ def butterworth(x: np.ndarray, y: np.ndarray, btype: str = "low", order: int = 4
     return out
 
 
+def residual(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """A - B, posición a posición. Ambas comparten el mismo eje X de la
+    sesión (una sola tabla cargada), así que no hace falta interpolar ni
+    alinear -- solo restar. NaN en cualquiera de las dos se propaga: un
+    residuo en un instante sin dato real no existe."""
+    return np.asarray(a, dtype=np.float64) - np.asarray(b, dtype=np.float64)
+
+
 def apply_recipe(kind: str, params: dict, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     if kind == KIND_ROLLING_MEAN:
         return rolling_mean(y, params.get("window", 10), params.get("center", True))

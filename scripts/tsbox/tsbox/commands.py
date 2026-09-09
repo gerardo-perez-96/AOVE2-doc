@@ -413,6 +413,41 @@ class ReorderSeries(_Base):
         self.touch()
 
 
+class SetOverlayWith(_Base):
+    """Superpone (o quita la superposición de) una serie sobre el panel de
+    otra, arrastrando desde el árbol lateral. Un arrastre accidental sobre
+    el panel equivocado debe poder deshacerse igual que cualquier otro gesto
+    de ratón que cambia el proyecto."""
+
+    def __init__(self, win, sid: str, onto_sid: str | None):
+        super().__init__(win, "Superponer serie" if onto_sid else "Quitar superposición")
+        self.sid = sid
+        self.new = onto_sid
+        s = win.session.project.by_id(sid)
+        self.old = s.overlay_with if s else None
+
+    def touch(self, sid: str | None = None) -> None:
+        self.win.session.dirty = True
+        p = self.win.panels.get(self.old)
+        if p is not None:
+            p.redraw_overlays()
+        p = self.win.panels.get(self.new)
+        if p is not None:
+            p.redraw_overlays()
+
+    def _set(self, val):
+        s = self.win.session.project.by_id(self.sid)
+        if s is not None:
+            s.overlay_with = val
+        self.touch()
+
+    def redo(self):
+        self._set(self.new)
+
+    def undo(self):
+        self._set(self.old)
+
+
 class RenameAnnotation(_Base):
     def __init__(self, win, aid: str, label: str):
         super().__init__(win, "Renombrar anotación")

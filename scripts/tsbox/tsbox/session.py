@@ -9,7 +9,7 @@ import pandas as pd
 
 from . import gaps as gapmod
 from . import loader, longformat, store, transforms
-from .model import KIND_RAW, Project, SeriesDef, SourceInfo, new_id
+from .model import KIND_RAW, KIND_RESIDUAL, Project, SeriesDef, SourceInfo, new_id
 
 
 class Session:
@@ -24,6 +24,12 @@ class Session:
         self.dirty = False
         self.warnings: list[str] = []
         self.long = None
+        # sids cuya derivada se está calculando en un hilo aparte (ver
+        # deriveworker.py): values() los trata como "sin dato todavía" en
+        # vez de intentar calcularlos de nuevo en el hilo de UI -- eso
+        # duplicaría el trabajo y, peor, bloquearía justo lo que el hilo
+        # aparte existe para evitar.
+        self._pending: set[str] = set()
 
     # ------------------------------------------------------------------
     def open(self, data_path: str | Path, x_mode: str, x_column: Optional[str],
@@ -32,7 +38,7 @@ class Session:
              float32: bool = True, progress=None,
              long_mode: str = "raw", group_column: Optional[str] = None,
              group_value=None, unstack_repeated_x: bool = False,
-             samples_per_step: Optional[int] = None) -> None:
+             samples_per_step: Optional[int] = None, decimal: str = ".") -> None:
         """Abre el fichero. Los filtros se empujan al lector: si pides 3 de 50
         columnas y 200k de 3M filas, se leen 3 columnas y 200k filas."""
         p = Path(data_path)
@@ -46,7 +52,7 @@ class Session:
 
         nrows, step, total = loader.plan_sampling(p, max_samples, sample_policy)
         df = loader.read_table(p, columns=want, nrows=nrows, decimate_step=step,
-                               float32=float32, progress=progress)
+                               float32=float32, progress=progress, decimal=decimal)
 
         # Formato largo: varias entidades apiladas sobre el mismo eje X.
         self.long = longformat.detect(df, x_column)
@@ -94,6 +100,7 @@ class Session:
             long_mode=long_mode, group_column=group_column,
             group_value=None if group_value is None else str(group_value),
             unstack_repeated_x=unstack_repeated_x, samples_per_step=samples_per_step,
+            decimal=decimal,
         )
 
         existing = None
@@ -175,9 +182,19 @@ class Session:
 
     # ------------------------------------------------------------------
     def values(self, sid: str) -> np.ndarray:
-        """Array de la serie. Las derivadas se recalculan desde la receta."""
+        """Array de la serie. Las derivadas se recalculan desde la receta.
+
+        Si sid está marcado como "pendiente" (calculándose en un hilo
+        aparte, ver mark_pending), se devuelve un array de NaN del tamaño
+        del eje X en vez de calcular aquí -- eso reproduciría el cálculo en
+        el hilo de UI, justo el bloqueo que el hilo aparte existe para
+        evitar. El panel debe consultar is_pending(sid) para mostrar
+        "calculando…" en vez de una curva plana en NaN.
+        """
         if sid in self._cache:
             return self._cache[sid]
+        if sid in self._pending:
+            return np.full(len(self.x), np.nan, dtype=np.float32)
         s = self.project.by_id(sid)
         if s is None or self.df is None:
             return np.empty(0)
@@ -197,6 +214,20 @@ class Session:
                     y = y.astype(np.float32, copy=False)
             else:
                 y = pd.to_numeric(col, errors="coerce").to_numpy(np.float32)
+        elif s.kind == KIND_RESIDUAL:
+            # Dos padres, no uno: A - B. other_sid puede haberse borrado
+            # (remove_series ya se encarga de borrar el residuo también en
+            # ese caso, pero por si acaso queda alguno huérfano en un
+            # proyecto viejo) -- entonces no hay nada que calcular.
+            other_sid = s.params.get("other_sid")
+            a = self.values(s.parent)
+            if other_sid is None or self.project.by_id(other_sid) is None:
+                y = np.full(len(self.x), np.nan, dtype=np.float32)
+            else:
+                b = self.values(other_sid)
+                y = transforms.residual(a, b)
+                if a.dtype == np.float32 and b.dtype == np.float32:
+                    y = y.astype(np.float32, copy=False)
         else:
             parent = self.values(s.parent)
             y = transforms.apply_recipe(s.kind, s.params, self.x, parent)
@@ -223,6 +254,25 @@ class Session:
             self._cache.pop(cur, None)
             self._gap_cache.pop(cur, None)
             stack.extend(c.sid for c in self.project.children_of(cur))
+
+    # ---------------------------------------------------- cálculo en hilo aparte
+    def mark_pending(self, sid: str) -> None:
+        """Marca sid como "calculándose en otro hilo": values() no lo
+        recalculará mientras tanto (ver values())."""
+        self._pending.add(sid)
+
+    def is_pending(self, sid: str) -> bool:
+        return sid in self._pending
+
+    def set_cached(self, sid: str, y: np.ndarray) -> None:
+        """Acopla un array ya calculado (por deriveworker.py, en otro hilo)
+        sin volver a ejecutar la receta. Llamar SIEMPRE desde el hilo de
+        UI -- _cache y _pending no son thread-safe, igual que el resto de
+        esta clase; el hilo de cálculo solo debe leer arrays (x, valores del
+        padre) y nunca tocar el estado de Session directamente."""
+        self._pending.discard(sid)
+        self._cache[sid] = y
+        self._gap_cache.pop(sid, None)
 
     def missing(self, sid: str, factor: float = 1.8) -> dict:
         if sid not in self._gap_cache:
@@ -278,6 +328,31 @@ class Session:
         self.project.add_series(s)
         self.dirty = True
         return s
+
+    def add_residual(self, sid_a: str, sid_b: str) -> SeriesDef:
+        """Nueva serie 'A - B'. Es instantáneo (una resta de arrays ya
+        cargados en memoria), así que a diferencia de add_derived() no hace
+        falta hilo aparte ni estado 'pendiente': se calcula aquí mismo y se
+        deja en caché de una vez."""
+        a = self.project.by_id(sid_a)
+        b = self.project.by_id(sid_b)
+        name = f"{a.name} − {b.name}"
+        s = SeriesDef(sid=new_id("s"), name=name, kind=KIND_RESIDUAL, parent=sid_a,
+                      params={"other_sid": sid_b, "other_name": b.name})
+        self.project.add_series(s)
+        self.dirty = True
+        self._cache[s.sid] = transforms.residual(self.values(sid_a), self.values(sid_b))
+        return s
+
+    def add_overlay(self, sid: str, onto_sid: str) -> None:
+        """Marca `sid` para dibujarse TAMBIÉN en el panel de `onto_sid`
+        (eje Y derecho), sin tocar la jerarquía parent/derivada. Distinto de
+        overlay_on_parent (que exige que `sid` sea derivada de `onto_sid`):
+        aquí las dos series pueden no tener ninguna relación."""
+        s = self.project.by_id(sid)
+        if s is not None:
+            s.overlay_with = onto_sid
+            self.dirty = True
 
     def save(self) -> Optional[Path]:
         if self.json_path is None:
