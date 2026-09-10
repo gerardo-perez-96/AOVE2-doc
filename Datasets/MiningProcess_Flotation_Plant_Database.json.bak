@@ -56,7 +56,7 @@
       "column": "Amina Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#D0021B",
       "order": 5,
       "overlay_on_parent": false,
@@ -116,7 +116,7 @@
       "column": "Flotation Column 01 Air Flow",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#9013FE",
       "order": 15,
       "overlay_on_parent": false,
@@ -131,7 +131,7 @@
       "column": "Flotation Column 02 Air Flow",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#F8E71C",
       "order": 16,
       "overlay_on_parent": false,
@@ -146,7 +146,7 @@
       "column": "Flotation Column 03 Air Flow",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#FF6F61",
       "order": 17,
       "overlay_on_parent": false,
@@ -161,7 +161,7 @@
       "column": "Flotation Column 04 Air Flow",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#4C9AFF",
       "order": 18,
       "overlay_on_parent": false,
@@ -176,7 +176,7 @@
       "column": "Flotation Column 05 Air Flow",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#F5A623",
       "order": 19,
       "overlay_on_parent": false,
@@ -191,7 +191,7 @@
       "column": "Flotation Column 06 Air Flow",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#7ED321",
       "order": 20,
       "overlay_on_parent": false,
@@ -344,7 +344,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#F5A623",
       "order": 8,
       "overlay_on_parent": true,
@@ -380,7 +380,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#D0021B",
       "order": 6,
       "overlay_on_parent": true,
@@ -398,7 +398,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#BD10E0",
       "order": 12,
       "overlay_on_parent": false,
@@ -416,7 +416,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#50E3C2",
       "order": 4,
       "overlay_on_parent": false,
@@ -434,7 +434,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#B8E986",
       "order": 14,
       "overlay_on_parent": false,
@@ -987,8 +987,8 @@
   ],
   "view": {
     "xrange": [
-      1488174785.2542586,
-      1505997822.6289868
+      1490268593.4361932,
+      1493706612.9340682
     ]
   }
 }
