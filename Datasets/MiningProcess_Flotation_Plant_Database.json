@@ -344,7 +344,7 @@
         "window": 180,
         "center": true
       },
-      "visible": false,
+      "visible": true,
       "color": "#F5A623",
       "order": 8,
       "overlay_on_parent": true,
@@ -362,7 +362,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#7ED321",
       "order": 2,
       "overlay_on_parent": true,
@@ -398,7 +398,7 @@
         "window": 180,
         "center": true
       },
-      "visible": false,
+      "visible": true,
       "color": "#BD10E0",
       "order": 12,
       "overlay_on_parent": false,
@@ -434,7 +434,7 @@
         "window": 180,
         "center": true
       },
-      "visible": false,
+      "visible": true,
       "color": "#B8E986",
       "order": 14,
       "overlay_on_parent": false,
@@ -470,7 +470,7 @@
         "window": 180,
         "center": true
       },
-      "visible": false,
+      "visible": true,
       "color": "#F8E71C",
       "order": 29,
       "overlay_on_parent": false,
@@ -698,6 +698,14 @@
       "t1": 1504611184.9584973,
       "label": "",
       "color": "#9419ff"
+    },
+    {
+      "aid": "r_826eba02",
+      "sid": "s_4eebd359",
+      "t0": 1489318959.4274306,
+      "t1": 1489324317.6902063,
+      "label": "interpolación",
+      "color": "#ffaaff"
     }
   ],
   "marks": [
@@ -987,8 +995,8 @@
   ],
   "view": {
     "xrange": [
-      1498552365.717154,
-      1498607103.404352
+      1491893833.627214,
+      1495952980.4456484
     ]
   }
 }
