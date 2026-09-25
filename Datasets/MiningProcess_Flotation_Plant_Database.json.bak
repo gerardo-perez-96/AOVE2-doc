@@ -26,7 +26,7 @@
       "column": "% Silica Feed",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#F5A623",
       "order": 0,
       "overlay_on_parent": false,
@@ -41,7 +41,7 @@
       "column": "Starch Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#7ED321",
       "order": 3,
       "overlay_on_parent": false,
@@ -362,7 +362,7 @@
         "window": 180,
         "center": true
       },
-      "visible": false,
+      "visible": true,
       "color": "#7ED321",
       "order": 2,
       "overlay_on_parent": true,
@@ -470,7 +470,7 @@
         "window": 180,
         "center": true
       },
-      "visible": false,
+      "visible": true,
       "color": "#F8E71C",
       "order": 29,
       "overlay_on_parent": false,
@@ -995,8 +995,8 @@
   ],
   "view": {
     "xrange": [
-      1493547568.9358616,
-      1507403809.3233442
+      1493633271.44893,
+      1493845600.3770778
     ]
   }
 }
