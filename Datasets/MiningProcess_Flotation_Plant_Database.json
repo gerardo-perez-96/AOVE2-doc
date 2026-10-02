@@ -26,7 +26,7 @@
       "column": "% Silica Feed",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#F5A623",
       "order": 0,
       "overlay_on_parent": false,
@@ -41,7 +41,7 @@
       "column": "Starch Flow",
       "parent": null,
       "params": {},
-      "visible": true,
+      "visible": false,
       "color": "#7ED321",
       "order": 4,
       "overlay_on_parent": false,
@@ -116,7 +116,7 @@
       "column": "Flotation Column 01 Air Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#9013FE",
       "order": 15,
       "overlay_on_parent": false,
@@ -131,7 +131,7 @@
       "column": "Flotation Column 02 Air Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#F8E71C",
       "order": 16,
       "overlay_on_parent": false,
@@ -146,7 +146,7 @@
       "column": "Flotation Column 03 Air Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#FF6F61",
       "order": 17,
       "overlay_on_parent": false,
@@ -161,7 +161,7 @@
       "column": "Flotation Column 04 Air Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#4C9AFF",
       "order": 18,
       "overlay_on_parent": false,
@@ -176,7 +176,7 @@
       "column": "Flotation Column 05 Air Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#F5A623",
       "order": 19,
       "overlay_on_parent": false,
@@ -191,7 +191,7 @@
       "column": "Flotation Column 06 Air Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#7ED321",
       "order": 20,
       "overlay_on_parent": false,
@@ -206,7 +206,7 @@
       "column": "Flotation Column 07 Air Flow",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#D0021B",
       "order": 21,
       "overlay_on_parent": false,
@@ -221,7 +221,7 @@
       "column": "Flotation Column 01 Level",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#BD10E0",
       "order": 22,
       "overlay_on_parent": false,
@@ -236,7 +236,7 @@
       "column": "Flotation Column 02 Level",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#50E3C2",
       "order": 23,
       "overlay_on_parent": false,
@@ -251,7 +251,7 @@
       "column": "Flotation Column 03 Level",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#B8E986",
       "order": 24,
       "overlay_on_parent": false,
@@ -266,7 +266,7 @@
       "column": "Flotation Column 04 Level",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#9013FE",
       "order": 25,
       "overlay_on_parent": false,
@@ -281,7 +281,7 @@
       "column": "Flotation Column 05 Level",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#F8E71C",
       "order": 26,
       "overlay_on_parent": false,
@@ -296,7 +296,7 @@
       "column": "Flotation Column 06 Level",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#FF6F61",
       "order": 28,
       "overlay_on_parent": false,
@@ -311,7 +311,7 @@
       "column": "Flotation Column 07 Level",
       "parent": null,
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#4C9AFF",
       "order": 30,
       "overlay_on_parent": false,
@@ -344,7 +344,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#F5A623",
       "order": 8,
       "overlay_on_parent": true,
@@ -362,7 +362,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#7ED321",
       "order": 2,
       "overlay_on_parent": true,
@@ -380,7 +380,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#D0021B",
       "order": 3,
       "overlay_on_parent": true,
@@ -398,7 +398,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#BD10E0",
       "order": 12,
       "overlay_on_parent": false,
@@ -416,7 +416,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#50E3C2",
       "order": 5,
       "overlay_on_parent": false,
@@ -434,7 +434,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#B8E986",
       "order": 14,
       "overlay_on_parent": false,
@@ -470,7 +470,7 @@
         "window": 180,
         "center": true
       },
-      "visible": true,
+      "visible": false,
       "color": "#F8E71C",
       "order": 29,
       "overlay_on_parent": false,
@@ -545,7 +545,7 @@
       "column": null,
       "parent": "s_4eebd359",
       "params": {},
-      "visible": false,
+      "visible": true,
       "color": "#D0021B",
       "order": 33,
       "overlay_on_parent": false,
@@ -931,9 +931,84 @@
       "label": "",
       "color": "#FFD54F",
       "exclude_from_stats": false
+    },
+    {
+      "aid": "g_229b49be",
+      "t0": 1504590380.2630708,
+      "t1": 1504638030.7565262,
+      "label": "",
+      "color": "#FFD54F",
+      "exclude_from_stats": false
     }
   ],
-  "global_marks": [],
+  "global_marks": [
+    {
+      "aid": "gm_51da2c72",
+      "t": 1495663612.8668902,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_1d3338dd",
+      "t": 1495852355.4575222,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_3dd84453",
+      "t": 1502356984.6211586,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_623034a7",
+      "t": 1503069953.5917826,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_be936b52",
+      "t": 1503167934.7076285,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_17dca4de",
+      "t": 1503309924.886547,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_eb587c09",
+      "t": 1503938917.3300424,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_7830b601",
+      "t": 1495552506.6094213,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_858c63cd",
+      "t": 1503622224.6557765,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_de4dccff",
+      "t": 1503446510.1101966,
+      "label": "",
+      "color": "#FFD54F"
+    },
+    {
+      "aid": "gm_e33835ba",
+      "t": 1503406803.687565,
+      "label": "",
+      "color": "#FFD54F"
+    }
+  ],
   "notes": [
     {
       "nid": "n_5f88e23e",
@@ -995,8 +1070,8 @@
   ],
   "view": {
     "xrange": [
-      1488133032.7208395,
-      1505976980.9777906
+      1502509229.7948568,
+      1508000972.5651114
     ]
   }
 }
